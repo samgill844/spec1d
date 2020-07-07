@@ -22,7 +22,7 @@ from scipy.ndimage import median_filter, maximum_filter
 from lmfit import minimize, Parameters, Minimizer, printfuncs, conf_interval
 import lmfit 
 from lmfit.models import GaussianModel, PolynomialModel, VoigtModel,LorentzianModel
-plt.style.use('dark_background')
+#plt.style.use('dark_background')
 
 ########################################
 # Argumant parser
@@ -51,6 +51,13 @@ parser.add_argument('-d',
                     '--threads',
                      help='The number of threads to use.', type=int , default=12)
 
+parser.add_argument('-e', 
+                    '--grating',
+                     help='The grating (overides from header).', type=str, default = 'None')
+
+parser.add_argument('-f', 
+                    '--gratingangle',
+                     help='The grating angle (overides from header).', type=int, default = -99)
 
 parser.add_argument('--extract_all_CuNe', action="store_true", default=False, help="Extract all CuNe lamp spectra")
 parser.add_argument('--extract_all_science', action="store_true", default=False, help="Extract all science spectra")
@@ -124,10 +131,10 @@ def align_CuNe_spectra(ref_spectra, traced_flux):
 
 
 def extract_all_CuNe_worker(i):
-    os.system('spupnic --extract_CuNe {:} --ref_spectra ../arc.dat'.format(t['FILE'][i], args.ref_spectra))
+    os.system('python /home/sam/Software/SpUpNIC/spupnic.py --extract_CuNe {:} --path_to_ref_spectra {:} --grating {:} --gratingangle {:}'.format(t['FILE'][i], args.path_to_ref_spectra, args.grating, args.gratingangle))
 
 def extract_all_science_worker(i):
-    os.system('spupnic --extract_science {:}'.format(t['FILE'][i]))
+    os.system('python /home/sam/Software/SpUpNIC/spupnic.py --extract_science {:} --path_to_ref_spectra {:} --grating {:} --gratingangle {:}'.format(t['FILE'][i], args.path_to_ref_spectra, args.grating, args.gratingangle))
 
 if __name__=="__main__":
     # First, parse the args 
@@ -167,9 +174,10 @@ if __name__=="__main__":
 
         # First, extract the image
         h = fits.open(args.extract_CuNe)
-        grating = h[0].header['GRATING']
-        gratingangle = int(str(h[0].header['GR-ANGLE']).split('.')[0])
-
+        if args.grating =='None' : grating = h[0].header['GRATING']
+        else :                     grating = args.grating
+        if args.gratingangle ==-99 : gratingangle = int(str(h[0].header['GR-ANGLE']).split('.')[0])
+        else :                     gratingangle = args.gratingangle
         norm = simple_norm(h[0].data, 'sqrt', min_percent=5, max_percent=95)
 
         # Now plot the image
@@ -359,10 +367,16 @@ if __name__=="__main__":
 
     if args.extract_science != 'no':
         h = fits.open(args.extract_science)
+        if args.grating =='None' : grating = h[0].header['GRATING']
+        else :                     grating = args.grating
+        if args.gratingangle ==-99 : gratingangle = int(str(h[0].header['GR-ANGLE']).split('.')[0])
+        else :                     gratingangle = args.gratingangle
+
         norm = simple_norm(h[0].data, 'sqrt', min_percent=5, max_percent=95)
 
         f1 = plt.figure()
         plt.imshow(h[0].data, aspect='auto', norm=norm, origin='lower', cmap = 'Greys')
+        plt.title('{:} [grating {:} Angle {:}]'.format(args.extract_science, grating, gratingangle))
         plt.axhline(40, c='r', alpha = 0.3, ls = '--')
         plt.axhline(100, c='r', alpha = 0.3, ls = '--')
         plt.xlabel('X')
@@ -395,6 +409,8 @@ if __name__=="__main__":
 
             xx_before, yy_before = np.load(before_filename).T
             xx_after, yy_after = np.load(after_filename).T
+            wavecal_min, wavecal_max = np.max([np.min(xx_before), np.min(xx_after)]) , np.min([np.max(xx_before), np.max(xx_after)]) 
+
             if xx_before.shape[0]!=xx_after.shape[0]:
                 print('Shapes do not match in the calibration peaks suggesting that different peaks are used. Defaulting to using the nearest.')
                 FAILED_WAVECAL=True
@@ -403,8 +419,15 @@ if __name__=="__main__":
                 FAILED_WAVECAL=True
             else:
                 # This is when it is sucessful
-                xcalibration = (xx_before + xx_after) / 2.
-                ycalibration = np.copy(yy_before)
+                #xcalibration = (xx_before + xx_after) / 2.
+                #ycalibration = np.copy(yy_before)
+                print('Wavelength [nm]    Pixel before [{:}]          Pixel after [{:}]      Delta Pixel'.format(before_filename, after_filename))
+                for i in range(yy_after.shape[0]):
+                    print('{:.3f}            {:.5f}                                        {:.5f}                                    {:.5f} {:}'.format(yy_after[i], xx_before[i], xx_after[i], xx_after[i] - xx_before[i],  'Problem?' if np.max(np.abs(xx_after[i] - xx_before[i]))> 1  else ''))
+                z_before = np.polyfit(xx_before, yy_before, 3)
+                z_after= np.polyfit(xx_after, yy_after, 3)
+                pcalibration = np.poly1d((z_before + z_after)/2.)
+
         else:
             FAILED_WAVECAL=True
 
@@ -413,7 +436,9 @@ if __name__=="__main__":
             nearest_filename = arc_table['FILE'][np.argmin(arc_table['HJD'] - time_of_obs)].split('.')[0] + '_calibration.npy'
             print('Using nearest calibration file : {:}'.format(nearest_filename))
             xcalibration, ycalibration = np.load(nearest_filename).T
-        
+            wavecal_min, wavecal_max = np.min(xcalibration), np.max(xcalibration)
+            pcalibration = np.poly1d(np.polyfit(xcalibration, ycalibration,3))
+
 
         # Now trace the thin line        
         upper_line, lower_line = [], []
@@ -475,11 +500,13 @@ if __name__=="__main__":
             flux[i] = np.sum(image_interpolater(x,y)) -  np.sum(image_interpolater(x,y_back))*dist / npoints
         
         figg, axs = plt.subplots(nrows=2, ncols=1, figsize=(15,10))
+        axs[0].set_title('{:} [grating {:} Angle {:}]'.format(args.extract_science, grating, gratingangle))
+
         x = np.arange(h[0].data.shape[1])[::-1]
 
         # Now we need to re-interpolate onto a wavelength axis
-        mask = (x > xcalibration[0]) & (x < xcalibration[-1])
-        wavelength = np.interp(x, xcalibration, ycalibration) # convert pixel to wavelength
+        mask = (x > wavecal_min) & (x < wavecal_max) # wavecal_min, wavecal_max
+        wavelength = pcalibration(x) #np.interp(x, xcalibration, ycalibration) # convert pixel to wavelength
         wavelength = wavelength[mask]
         flux = flux[mask]
         flux_err = np.ones(flux.shape[0])*10
@@ -494,8 +521,8 @@ if __name__=="__main__":
 
         tmp = np.array([wavelength.tolist(),flux.tolist(),flux_err.tolist()]).T[::-1]
         np.savetxt('{:}_{:}_spectra.dat'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), tmp)
-        tmp = np.array([wavelength.tolist(),(flux/median_max).tolist(),flux_err.tolist()]).T[::-1]
-        np.savetxt('{:}_{:}_spectra_normlised.dat'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), tmp)
+        #tmp = np.array([wavelength.tolist(),(flux/median_max).tolist(),flux_err.tolist()]).T[::-1]
+        #np.savetxt('{:}_{:}_spectra_normlised.dat'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), tmp)
 
 
     if args.extract_all_science:

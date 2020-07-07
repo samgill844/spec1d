@@ -53,5 +53,25 @@ Calibration:
 ```
 These tell you which lines have been sucessfuly matched with the reference spectra. If there aren't any or very few, check the plots - something has gone wrong. This information is saved in a .npy extension which can be then used to calibrate nearby science frames. 
 
+We can cheat here, and instead of giving it every single CuNe file seperately, we can search the log file and get it to reduce every CuNe frame in the current directory. To do this, we can do something like:
+
+```bash
+spupnic --grating gr5 --gratingangle -4 --extract_all_CuNe --threads 12
+```
+
+This will reduce all the CuNe frames using 12 multiprocessing threads.
+
 ## Step 4 - Reduction science frames. 
 
+To reduce a science frame, we simply pass:
+```bash
+spupnic --grating gr5 --gratingangle -4 --extract_science a1341001.fits
+```
+
+This will look for calibration files within 1 hour of the science frame. If possiblem, it will take th eaverage of the calibration file before and after the exposure. If not, the default is simply to choose the nearest calibration file. If none are within 1 hour, it will fail unless the code is modified. 
+
+Like the CuNe files, we can reduce these en-mass by passing:
+
+```bash
+spupnic --grating gr5 --gratingangle -4 --extract_all_science --threads 12
+```
