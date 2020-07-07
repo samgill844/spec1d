@@ -35,6 +35,9 @@ python ~/Software/SpUpNIC/spupnic.py --extract_CuNe a1471096.fits --path_to_ref_
 ```
 This will create 3 new files in our directory with the prefix a1471096 - two plots and a calibratation file. The first plot shows the CCD image along with the lines identified and a trace of the slit. The second plot shows the extracted spectrum and the associated lines marked up. In the output you should see something like this
 
+
+![alt text](https://github.com/samgill844/SpUpNIC/blob/master/images/fig1.png)
+
 ```bash
 Calibration:
 	182.56421197218626 -> 621.728 nm
