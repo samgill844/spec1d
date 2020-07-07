@@ -38,6 +38,9 @@ This will create 3 new files in our directory with the prefix a1471096 - two plo
 
 ![alt text](https://github.com/samgill844/SpUpNIC/blob/master/images/fig1.png)
 
+![alt text](https://github.com/samgill844/SpUpNIC/blob/master/images/fig2.png)
+
+
 ```bash
 Calibration:
 	182.56421197218626 -> 621.728 nm
