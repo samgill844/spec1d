@@ -76,6 +76,11 @@ spupnic --grating gr5 --gratingangle -4 --extract_science a1341001.fits
 
 This will look for calibration files within 1 hour of the science frame. If possiblem, it will take th eaverage of the calibration file before and after the exposure. If not, the default is simply to choose the nearest calibration file. If none are within 1 hour, it will fail unless the code is modified. 
 
+![alt text](https://github.com/samgill844/SpUpNIC/blob/master/images/fig3.png)
+
+![alt text](https://github.com/samgill844/SpUpNIC/blob/master/images/fig4.png)
+
+
 Like the CuNe files, we can reduce these en-mass by passing:
 
 ```bash
