@@ -1,0 +1,440 @@
+#!/home/sam/anaconda3/bin/python
+
+########################################
+# IMPORTS
+########################################
+import matplotlib.pyplot as plt
+import numpy as np, os, sys
+import argparse
+from astropy.io import fits 
+from astropy.visualization import simple_norm
+import pkg_resources
+from scipy.signal import find_peaks
+from tqdm import tqdm 
+from multiprocessing import Pool
+import matplotlib.patches as patches
+from astropy.table import Table, Column, Row
+#plt.style.use('dark_background')
+
+# My own imports
+from spec1d.create_log import create_log # This function re-creates a log file for a night based on the fits files there
+from spec1d.image_tracing import trace_image_between_rows, trace_image_between_cols, trace_image_between_lines # These functions handle the summing of flux
+from spec1d.lmfit_funcs import fit_box_to_step_function, fit_gaussians_to_emission_lines
+from spec1d.align_distorted_spectra import align_distorted_spectra
+
+
+########################################
+# Argumant parser
+########################################
+description = '''Spupnic reduction code'''
+
+
+parser = argparse.ArgumentParser('spupnic', description=description)
+
+parser.add_argument('--create_log', action="store_true", default=False, help="Create the log file")
+
+parser.add_argument('-a', 
+                    '--extract_CuNe',
+                     help='Extract spectrum from a fits file', type=str, default='no')
+
+parser.add_argument('-b', 
+                    '--extract_science',
+                     help='Extract science spectra from a log file', type=str, default='no')
+
+parser.add_argument('-d', 
+                    '--threads',
+                     help='The number of threads to use.', type=int , default=12)
+
+parser.add_argument('-e', 
+                    '--grating',
+                     help='The grating (overides from header).', type=str, default = 'None')
+
+parser.add_argument('-f', 
+                    '--gratingangle',
+                     help='The grating angle (overides from header).', type=int, default = -99)
+
+parser.add_argument('-g', 
+                    '--verbose',
+                     help='Full verbose', type=bool, default = False)
+
+parser.add_argument('--extract_all_CuNe', action="store_true", default=False, help="Extract all CuNe lamp spectra")
+parser.add_argument('--extract_all_science', action="store_true", default=False, help="Extract all science spectra")
+parser.add_argument('--process_folder', action="store_true", default=False, help="Process entire night of data.")
+
+
+########################################
+# Worker functions
+########################################
+
+def extract_all_CuNe_worker(i):
+    os.system('spupnic --extract_CuNe {:} --grating {:} --gratingangle {:}'.format(t['FILE'][i], args.grating, args.gratingangle))
+
+def extract_all_science_worker(i):
+    os.system('spupnic --extract_science {:} --grating {:} --gratingangle {:}'.format(t['FILE'][i], args.grating, args.gratingangle))
+
+if __name__=="__main__":
+    # First, parse the args 
+    args = parser.parse_args()
+
+    # Create the logfile
+    if args.create_log : create_log()
+
+
+
+
+    if args.extract_CuNe!='no':
+        # First, extract the image
+        h = fits.open(args.extract_CuNe)
+
+        # Now parse the grating and angle, use those in the header if empty
+        if args.grating =='None' : grating = h[0].header['GRATING']
+        else :                     grating = args.grating
+        if args.gratingangle ==-99 : gratingangle = int(str(h[0].header['GR-ANGLE']).split('.')[0])
+        else :                     gratingangle = args.gratingangle
+        norm = simple_norm(h[0].data, 'sqrt', min_percent=5, max_percent=95)
+
+        # Now plot the image
+        f1 = plt.figure()
+        ax1 = plt.gca()
+        plt.imshow(h[0].data, aspect='auto', norm=norm, origin='lower', cmap='Greys')
+        plt.axhline(40, c='r', alpha = 0.3, ls = '--')
+        plt.axhline(100, c='r', alpha = 0.3, ls = '--')
+        ax1.set(xlabel='X', ylabel='Y', title='{:} [grating {:} Angle {:}]'.format(args.extract_CuNe, grating, gratingangle), xlim=[0,h[0].data.shape[1]], ylim = [0,h[0].data.shape[0]])
+
+
+        # Get first spectra corrosponding to the bounds in the above plot
+        # This is only a rough spectra, and not properly traced. 
+        initial_spectra = trace_image_between_rows(40,100, h[0].data)[::-1] # We reverse it to be consistent with the calibration spectra #np.sum(h[0].data[40:100,:], axis=0)[::-1]
+        initial_spectra = initial_spectra / initial_spectra.max() 
+        initial_spectra = initial_spectra - np.percentile(initial_spectra, 20) # remove the 20th percentile to align bottom with 0
+
+
+        # To trace the spectral line, we will find peaks in the initial_spectra
+        # and fit a box to it. 
+        peaks, _ = find_peaks(initial_spectra, height = np.std(initial_spectra)) 
+        peaks = np.sort(peaks)
+        if (len(peaks) > 50) or (len(peaks) < 5) : 
+            print('{:} spectral lines found - is there a problem?'.format(len(peaks)))
+            f1.savefig('{:}_image.png'.format(args.extract_CuNe.split('.')[0]), bbox='tight'); plt.close(); plt.plot(initial_spectra); plt.savefig('{:}_initial_spectra.png'.format(args.extract_CuNe.split('.')[0])) 
+            exit()
+
+        #f2, (ax2, ax3, ax4) = plt.subplots(nrows=3, ncols=1, figsize=(15,10), sharex=True)
+        f2, ax2= plt.subplots(nrows=1, ncols=1, figsize=(15,6), sharex=True)
+
+        ax2.set(ylabel = 'Normalised Counts', xlabel='Pixel', title = args.extract_CuNe)
+        #ax3.set(ylabel = 'Normalised Counts', xlabel='Pixel')
+        #ax4.set(ylabel = 'Normalised Counts', xlabel='Pixel')
+
+        ax2.plot(np.arange(initial_spectra.shape[0]), initial_spectra, c='b', alpha = 0.4, ls='--', label='Initial spectra')
+        #ax2.plot(np.arange(initial_spectra.shape[0])[peaks], initial_spectra[peaks], 'r+', label='Initial spectra peaks')
+
+
+        # Now we get the vertical profile at each peak
+        # This will allow us to fit a box to the slit 
+        # for each line, and thus trace it efficiently. 
+        upper_line, lower_line = np.zeros(len(peaks)), np.zeros(len(peaks))
+        for j in range(len(peaks)):
+            vertical_spectra = trace_image_between_cols(h[0].data.shape[1] - peaks[j],h[0].data.shape[1] - peaks[j]+1,h[0].data ) # h[0].data[:, h[0].data.shape[1] - peaks[j]] # extract vertical profile
+            vertical_spectra = vertical_spectra - np.percentile(vertical_spectra, 20) # slide the baseline down a bit 
+
+            # Now fit a box to the vertical slice
+            #_, _, _, _, upper_line[j], lower_line[j] = fit_box_to_step_function(vertical_spectra, [np.percentile(vertical_spectra, 80), 80, 80])
+
+            # Alternatively, lets look at thresholding instead
+            x = np.arange(vertical_spectra.shape[0])[10:-10]
+            upper_line[j] = np.max(x[vertical_spectra[10:-10] > 0.2*np.max(vertical_spectra[10:-10])])
+            lower_line[j] = np.min(x[vertical_spectra[10:-10] > 0.2*np.max(vertical_spectra[10:-10])])
+
+            # Add patch to image tracing the spectral line
+            rect = patches.Rectangle((-15 + initial_spectra.shape[0]-np.arange(initial_spectra.shape[0])[peaks][j],upper_line[j]),30,lower_line[j] - upper_line[j],linewidth=1,edgecolor='g',facecolor='none', alpha = 0.8)
+            ax1.add_patch(rect)
+
+
+        # Now fit a polynomial to the vertical extents of the CuNe lines so that we can trace the slit
+        z_upper = np.polyfit(initial_spectra.shape[0]-np.arange(initial_spectra.shape[0])[peaks],  upper_line, 1) ; p_upper = np.poly1d(z_upper)
+        z_lower = np.polyfit(initial_spectra.shape[0]-np.arange(initial_spectra.shape[0])[peaks],  lower_line, 1) ; p_lower = np.poly1d(z_lower)
+        p_x = initial_spectra.shape[0]-np.arange(initial_spectra.shape[0])
+        ax1.plot(p_x, p_upper(p_x), 'g',linewidth=1, ls='--')
+        ax1.plot(p_x, p_lower(p_x), 'g',linewidth=1, ls='--')
+
+        # Thats it for the image, so let's save and close
+        f1.tight_layout()
+        f1.savefig('{:}_image.png'.format(args.extract_CuNe.split('.')[0]), bbox='tight')
+        plt.close(f1)
+
+
+        # Now trace the true CuNe spectra from the mean gradient and extent of the slit
+        traced_flux = trace_image_between_lines((z_upper[0] + z_lower[0])/2. , z_upper[1], z_lower[1],   h[0].data, vertical_oversample=10)
+        traced_flux = traced_flux[::-1] / traced_flux.max() # normalise and reverse flux
+        traced_flux = traced_flux - np.percentile(traced_flux, 20) # remove the 20th percentile to align bottom with 0
+        ax2.plot(np.arange(traced_flux.shape[0]), traced_flux, c='k', alpha = 0.4, ls='--', label = 'Traced spectra')
+
+
+        # Now we need to load in the reference spectra 
+        # that corrosponds to the mask        
+        ref_spectra = pkg_resources.resource_filename('spec1d', 'data/{:}_{:}_ref_spectra.dat'.format(grating, gratingangle))
+        if not os.path.isfile(ref_spectra) : raise OSError('No file {:}\nPerhaps run a calibration to create one in this dir?'.format(ref_spectra_lines))
+        else : ref_spectra = np.loadtxt(ref_spectra)
+        ref_spectra = ref_spectra[::-1] / ref_spectra.max()
+        #ax3.plot(np.arange(ref_spectra.shape[0]), ref_spectra, c='r', alpha = 0.5, ls='-', label='reference spectra')
+        #ax3.plot(np.arange(traced_flux.shape[0]), traced_flux , c='y', alpha = 0.5, ls='-', label='Trace spectra')
+
+        # Now we need to get the stretch and slide to match out spectrum to 
+        # the reference spectrum.
+        # We want a transorm of the pixel axis to the referece pixel axis
+        # so we can easily match spectral lines
+        #np.save('ref_traced', np.array([ref_spectra, traced_flux]))
+        spreader, lmfit_minimize_result  = align_distorted_spectra(ref_spectra, traced_flux, verbose=args.verbose)
+        #ax3.plot(np.arange(ref_spectra.shape[0]), spreader(np.arange(ref_spectra.shape[0]), lmfit_minimize_result.params), 'b--', label='Distorted model', alpha = 0.5)
+
+        # Now load the calibration lines 
+        ref_spectra_lines = pkg_resources.resource_filename('spec1d', 'data/{:}_{:}_ref_lines.dat'.format(grating, gratingangle))
+        if not os.path.isfile(ref_spectra_lines) : raise OSError('No file {:}\nPerhaps run a calibration to create one in this dir?'.format(ref_spectra_lines))
+        else : ref_spectra_lines = np.loadtxt(ref_spectra_lines)
+        calibration = np.array([spreader( ref_spectra_lines[:,1], lmfit_minimize_result.params, return_wave=True),ref_spectra_lines[:,0]]).T # the pixel positions of the wavelength calibration
+
+        # Now the problim with calibration is that some peaks are there and some are not. 
+        # Lets do a peak find of the traced flux to see what peaks match up with the calibration
+        traced_flux_peaks, _ = find_peaks(traced_flux, height = 0.6*np.std(traced_flux)) 
+        #ax4.plot(np.arange(traced_flux.shape[0]), traced_flux, c='y', alpha = 0.8, ls='--', label='Trace spectra')
+        #ax4.scatter(np.arange(traced_flux.shape[0])[traced_flux_peaks], traced_flux[traced_flux_peaks], c='y', marker = "2", label='Traced spectra peaks')
+        #for cal in range(len(calibration)) : ax4.axvline(calibration[cal,0], ls = '-', c='b', alpha = 0.5, label = 'Calibration peaks' if cal ==0 else None)
+
+        # Find the ones we have peaks for 
+        # We need to match calibration[cal,0] with np.arange(traced_flux.shape[0])[traced_flux_peaks]
+        mask = np.zeros(calibration.shape[0], dtype = np.bool)
+        for i in range(len(calibration)):
+            if np.sum(np.abs(calibration[i,0] -   np.arange(traced_flux.shape[0])[traced_flux_peaks]) < 5) ==1 : mask[i] = True
+        calibration = calibration[mask]
+        #ax4.scatter(calibration[:,0], np.interp(calibration[:,0], np.arange(traced_flux.shape[0]), traced_flux), s=80, facecolors='none', edgecolors='r')
+
+        # Now fit Gaussians at each line to find the best line center - replace the calibrations pixel positions with these positions
+        calibration[:,0], aplitudes, sigmas, gauss_model_out = fit_gaussians_to_emission_lines(traced_flux, calibration[:,0], verbose=args.verbose)
+        #ax4.plot(np.arange(traced_flux.shape[0]), gauss_model_out.best_fit, c='r', alpha = 0.8, ls='--', label='Fitted Gaussians')
+        #for cal in range(len(calibration)) : ax4.axvline(calibration[cal,0], ls = '--', c='b', alpha = 0.5, label = 'Re-calibrated peaks' if cal ==0 else None)
+        #ax4.legend()
+        
+        print('Calibration for {:} [grating {:} at angle {:}]:'.format(args.extract_CuNe, grating, gratingangle))
+        bbox = dict(boxstyle="round", fc="0.8")
+        arrowprops = dict(
+            arrowstyle = "->",
+            connectionstyle = "angle,angleA=0,angleB=90,rad=10")
+
+        for cal in calibration:
+            print('\t{:} -> {:} nm'.format(*cal))
+            s = '{:.1f} nm'.format(cal[1])
+            xy = (cal[0], np.interp(cal[0], np.arange(traced_flux.shape[0]), traced_flux))
+            xytext = (cal[0] , np.interp(cal[0], np.arange(traced_flux.shape[0]), traced_flux) + 0.1)
+            ax2.annotate(s, xy=xy, xytext=xytext, bbox=bbox, arrowprops=arrowprops)
+
+
+        # Now save the calibration
+        np.save('{:}_{:}_{:}_calibration'.format(args.extract_CuNe.split('.')[0], grating, gratingangle), calibration)
+
+        # Tidy up the plot and save
+        ax2.set(title='{:} [grating {:} Angle {:}]'.format(args.extract_CuNe, grating, gratingangle), xlim=[0, len(traced_flux)])
+        ax2.legend()
+        f2.tight_layout()
+        f2.savefig('{:}_CuNe.png'.format(args.extract_CuNe.split('.')[0]), bbox='tight')
+        plt.close()
+
+
+    if args.extract_all_CuNe:
+        # Load the log file
+        t = Table.read('log.fits')
+
+        # now filter all those with CuNe lamp spectra
+        t = t[(t['EXPTYPE']=='ARC') & (t['ARC-LAMP']=='CuNe')]
+
+        # Now multiprocess
+        with Pool(args.threads) as pool:
+            pool.map(extract_all_CuNe_worker, range(len(t)))
+
+
+
+    if args.extract_science != 'no':
+        h = fits.open(args.extract_science)
+        if args.grating =='None' : grating = h[0].header['GRATING']
+        else :                     grating = args.grating
+        if args.gratingangle ==-99 : gratingangle = int(str(h[0].header['GR-ANGLE']).split('.')[0])
+        else :                     gratingangle = args.gratingangle
+
+        norm = simple_norm(h[0].data, 'sqrt', min_percent=5, max_percent=95)
+
+        f1 = plt.figure()
+        plt.imshow(h[0].data, aspect='auto', norm=norm, origin='lower', cmap = 'Greys')
+        plt.title('{:} [grating {:} Angle {:}]'.format(args.extract_science, grating, gratingangle))
+        plt.axhline(40, c='r', alpha = 0.3, ls = '--')
+        plt.axhline(100, c='r', alpha = 0.3, ls = '--')
+        plt.xlabel('X')
+        plt.ylabel('Y')        
+
+        # Now find ThAr within specified time limit
+        t = Table.read('log.fits') 
+        time_of_obs = t['HJD'][np.where(t['FILE']==args.extract_science)[0][0]]
+        arc_table = t[(t['EXPTYPE']=='ARC') & (t['ARC-LAMP']=='CuNe')]
+        arc_table = arc_table[np.abs(arc_table['HJD'] - time_of_obs) < 1/24] 
+        if len(arc_table) == 0 : 
+            #raise ValueError('No arc calibrations within 1 hr')
+            print('No arcs within 1 hour of obs :(')
+            exit()
+
+        # Ideally, we want to take the average of the one before and the one after.
+        # The backup is to use the closest in time
+        FAILED_WAVECAL = False
+        arc_table_before = arc_table[arc_table['HJD'] < time_of_obs]
+        arc_table_after= arc_table[arc_table['HJD'] > time_of_obs]
+        print('Number of calibrations before {:}'.format(len(arc_table_before)))
+        print('Number of calibrations adter  {:}'.format(len(arc_table_after)))
+
+        if (len(arc_table_before)!=0) and (len(arc_table_after) != 0):
+            print('Using the average wavelength calibraration for the reference file before and after. ')
+            before_filename = arc_table_before['FILE'][np.argmax(arc_table_before['HJD'])].split('.')[0] + '_{:}_{:}_calibration.npy'.format(grating, gratingangle)
+            after_filename = arc_table_after['FILE'][np.argmin(arc_table_after['HJD'])].split('.')[0] + '_{:}_{:}_calibration.npy'.format(grating, gratingangle)
+            print('\tnearest calibration before : {:}'.format(before_filename))
+            print('\tnearest calibration after  : {:}'.format(after_filename))
+
+            xx_before, yy_before = np.load(before_filename).T
+            xx_after, yy_after = np.load(after_filename).T
+            wavecal_min, wavecal_max = np.max([np.min(xx_before), np.min(xx_after)]) , np.min([np.max(xx_before), np.max(xx_after)]) 
+
+            if xx_before.shape[0]!=xx_after.shape[0]:
+                print('Shapes do not match in the calibration peaks suggesting that different peaks are used. Defaulting to using the nearest.')
+                FAILED_WAVECAL=True
+            elif False in (yy_before==yy_after):
+                print('Different calibration peaks were used suggesting in the nearest calibrations. Defaulting to using the nearest.')
+                FAILED_WAVECAL=True
+            else:
+                # This is when it is sucessful
+                #xcalibration = (xx_before + xx_after) / 2.
+                #ycalibration = np.copy(yy_before)
+                print('Wavelength [nm]    Pixel before [{:}]          Pixel after [{:}]      Delta Pixel'.format(before_filename, after_filename))
+                for i in range(yy_after.shape[0]):
+                    print('{:.3f}            {:.5f}                                        {:.5f}                                    {:.5f} {:}'.format(yy_after[i], xx_before[i], xx_after[i], xx_after[i] - xx_before[i],  'Problem?' if np.max(np.abs(xx_after[i] - xx_before[i]))> 1  else ''))
+                z_before = np.polyfit(xx_before, yy_before, 3)
+                z_after= np.polyfit(xx_after, yy_after, 3)
+                pcalibration = np.poly1d((z_before + z_after)/2.)
+
+        else:
+            FAILED_WAVECAL=True
+
+        # Use the nearest instead
+        if FAILED_WAVECAL:
+            nearest_filename = arc_table['FILE'][np.argmin(arc_table['HJD'] - time_of_obs)].split('.')[0] + '_{:}_{:}_calibration.npy'.format(grating, gratingangle)
+            print('Using nearest calibration file : {:}'.format(nearest_filename))
+            xcalibration, ycalibration = np.load(nearest_filename).T
+            wavecal_min, wavecal_max = np.min(xcalibration), np.max(xcalibration)
+            pcalibration = np.poly1d(np.polyfit(xcalibration, ycalibration,3))
+
+
+
+        # Now trace the spectral line        
+        upper_line, lower_line = np.zeros(np.arange(25,1950)[::25].shape[0]), np.zeros(np.arange(25,1950)[::25].shape[0])
+        count = 0
+        for j in range(50,1950)[::25]:
+            vertical_trace = trace_image_between_cols(j-5,j+5, h[0].data); vertical_trace = vertical_trace - np.percentile(vertical_trace, 20);  vertical_trace = vertical_trace / np.max(vertical_trace)
+            _, _, _, _, lower_line[count], upper_line[count] = fit_box_to_step_function(vertical_trace, [np.max(vertical_trace), np.argmax(vertical_trace), 3])
+            count +=1
+
+        # Median cut, just in case
+        lower_line[(lower_line < (np.median(lower_line) - 5)) | (lower_line > (np.median(lower_line) + 5))] = np.median(lower_line)
+        upper_line[(upper_line < (np.median(upper_line) - 5)) | (upper_line > (np.median(upper_line) + 5))] = np.median(upper_line)
+        plt.scatter(np.arange(25,1950)[::25],  upper_line, c = 'r', s = 2)
+        plt.scatter(np.arange(25,1950)[::25], lower_line, c='r', s = 2)
+        
+        # Now poly fit these points to trace the edge of the slit
+        z_upper, z_lower = np.polyfit(np.arange(25,1950)[::25],  upper_line, 1), np.polyfit(np.arange(25,1950)[::25],  lower_line, 1)
+        p_upper, p_lower = np.poly1d(z_upper), np.poly1d(z_lower)
+        p_x = h[0].data.shape[1]-np.arange(h[0].data.shape[1])
+        slit_width_vertical =  z_upper[1] - z_lower[1]
+        print(slit_width_vertical) 
+
+        # Now plot various things before closing
+        plt.fill_between(p_x, p_upper(p_x) , p_lower(p_x), color='green', alpha=0.3, edgecolor='green')
+        plt.fill_between(p_x, p_upper(p_x) +7 + slit_width_vertical , p_upper(p_x) +7, color='red', alpha=0.3, edgecolor='red')
+        plt.fill_between(p_x, p_lower(p_x) -7 , p_lower(p_x) -7 - slit_width_vertical, color='red', alpha=0.3, edgecolor='red')
+        plt.show()
+        plt.savefig('{:}_{:}_image.png'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), bbox='tight')
+        plt.close()
+
+        # Now extract the stellar fluxes along with the average of the sky
+        print(z_upper[1], z_lower[1])
+        stellar_flux = trace_image_between_lines((z_upper[0] + z_lower[0])/2., z_upper[1], z_lower[1],   h[0].data, vertical_oversample=10) 
+        upper_sky_flux = trace_image_between_lines((z_upper[0] + z_lower[0])/2., z_upper[1] - (slit_width_vertical+7), z_lower[1] - (slit_width_vertical+7),   h[0].data, vertical_oversample=10) 
+        lower_sky_flux = trace_image_between_lines((z_upper[0] + z_lower[0])/2., z_upper[1] + (slit_width_vertical+7), z_lower[1] + (slit_width_vertical+7),   h[0].data, vertical_oversample=10) 
+        average_sky_flux = (upper_sky_flux + lower_sky_flux) / 2
+
+        plt.figure()
+        plt.plot(stellar_flux)
+        plt.figure()
+        plt.plot(average_sky_flux)
+
+        plt.figure()
+        plt.plot(stellar_flux-average_sky_flux)
+
+        plt.show()
+
+        # now create the iamge interpolater
+        image_interpolater = interp2d(np.arange(h[0].data.shape[1]), np.arange(h[0].data.shape[0]), h[0].data)
+        npoints = 100
+        flux = np.zeros(h[0].data.shape[1])
+        for i in range(h[0].data.shape[1]):
+            x = np.linspace(i, i + xs, npoints )
+            y_star = np.linspace(p_lower(i), p_upper(i), npoints)
+            y_sky_low = np.linspace(p_lower(i)-20, p_upper(i)-20, npoints)
+            flux[i] = (np.sum(image_interpolater(x,y_star)) -  np.sum(image_interpolater(x,y_sky_low)))*dist / npoints
+        
+        figg, axs = plt.subplots(nrows=2, ncols=1, figsize=(15,10))
+        axs[0].set_title('{:} [grating {:} Angle {:}]'.format(args.extract_science, grating, gratingangle))
+
+        x = np.arange(h[0].data.shape[1])[::-1]
+
+        # Now we need to re-interpolate onto a wavelength axis
+        mask = ((x > wavecal_min) & (x < wavecal_max))  # wavecal_min, wavecal_max
+        wavelength = pcalibration(x) #np.interp(x, xcalibration, ycalibration) # convert pixel to wavelength
+        #mask = mask & ~((wavelength > 686.49442) & (wavelength < 688.1848))
+        wavelength = wavelength[mask]
+        flux = flux[mask]
+        flux_err = np.ones(flux.shape[0])*10
+        median_max = maximum_filter(median_filter(flux,150),150)
+
+        axs[0].plot(wavelength, flux, 'k')
+        axs[0].set(xlabel='Wavelength [nm]', ylabel='Counts')
+        axs[1].plot(wavelength, flux/median_max, 'k')
+        axs[1].set(xlabel='Wavelength [nm]', ylabel='Counts')
+        plt.savefig('{:}_{:}_spectra.png'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), bbox='tight')
+        plt.close()
+
+        tmp = np.array([wavelength.tolist(),flux.tolist(),flux_err.tolist()]).T[::-1]
+        np.savetxt('{:}_{:}_spectra.dat'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), tmp)
+        #tmp = np.array([wavelength.tolist(),(flux/median_max).tolist(),flux_err.tolist()]).T[::-1]
+        #np.savetxt('{:}_{:}_spectra_normlised.dat'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), tmp)
+
+
+    if args.extract_all_science:
+        # Load the log file
+        t = Table.read('log.fits')
+
+        # now filter all those with Science frames
+        t = t[t['EXPTYPE']=='SCIENCE']
+
+        # Now multiprocess
+        with Pool(args.threads) as pool:
+            pool.map(extract_all_science_worker, range(len(t)))
+
+
+    if args.process_folder:
+        # Get the log file
+        os.system('spupnic --create_log')
+
+        # Load the log file
+        t = Table.read('log.fits')
+        t = t[(t['EXPTYPE']=='ARC') & (t['ARC-LAMP']=='CuNe')]
+        with Pool(args.threads) as pool:
+            pool.map(extract_all_CuNe_worker, range(len(t)))
+
+        t = Table.read('log.fits')
+        t = t[t['EXPTYPE']=='SCIENCE']
+        with Pool(args.threads) as pool:
+            pool.map(extract_all_science_worker, range(len(t)))
+
