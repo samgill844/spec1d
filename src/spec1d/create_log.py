@@ -1,4 +1,7 @@
-from astropy.table import Table 
+from astropy.table import Table , Column
+from astropy.io import fits
+import glob 
+import numpy as np
 
 def create_log():
     files = glob.glob('a*.fits')

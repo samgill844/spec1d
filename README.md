@@ -1,15 +1,15 @@
 # spec1d
-A pipeline to reduce spupnic data, extract spectra and perform RV measurements. 
+A pipeline to reduce 1d dispersion spectrograph data. 
 
 
 # Setup
-There is no official setup for this - I might make one in future. For now, clone this repository and make an alias like this for simplicity. 
-
+Setup is as easy as,
 ```bash
-alias spupnic="python [path_to_spupnic]/SpUpNIC/spupnic.py"
+pip install setup.py
 ```
+There is no pypi for this yet. 
 
-# Usage
+# Spupnic Usage
 
 ## Step 1 - create the log file
 
@@ -17,7 +17,7 @@ It is nesseary to re-make the log file from the fits files in the directory sinc
 
 ```bash
 cd ~/Documents/NGTS_monotransit_WG/SAAO/saao-1.9/0130
-python ~/Software/SpUpNIC/spupnic.py --create_log
+spupnic --create_log
 ```
 
 This will make a file called log.fits in the same directory which will be used for the reduction of data. From the log file, you can easily see which frames are science, calibration, dome flats or biases. 
@@ -31,7 +31,7 @@ Coming soon. For now, we don't use them and everything works pretty well.
 We need to reduce the calibration spectra so that we can accurately calibrate the wavelength axis of the science frames. To do this, we need to pass a CuNe fits file name long with a path to the reference spectra. This code automatically extracts information about the grating and angle (e.g. gr5 and -4) from the fits headers. If for whatever this isnt right, you'll need to fix them.
 
 ```bash
-python ~/Software/SpUpNIC/spupnic.py --extract_CuNe a1471096.fits --path_to_ref_spectra ~/Software/SpUpNIC/CuNe_ref_spectra
+spupnic --extract_CuNe a1471096.fits --path_to_ref_spectra ~/Software/SpUpNIC/CuNe_ref_spectra
 ```
 This will create 3 new files in our directory with the prefix a1471096 - two plots and a calibratation file. The first plot shows the CCD image along with the lines identified and a trace of the slit. The second plot shows the extracted spectrum and the associated lines marked up. In the output you should see something like this
 

@@ -2,6 +2,8 @@ LICENSE
 README.md
 setup.py
 Utils/spupnic
+dist/spec1d_package-3.8-py3.7.egg
+dist/spupnic_package-3.8-py3.7.egg
 images/fig1.png
 images/fig2.png
 images/fig3.png

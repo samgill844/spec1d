@@ -21,7 +21,7 @@ from spec1d.create_log import create_log # This function re-creates a log file f
 from spec1d.image_tracing import trace_image_between_rows, trace_image_between_cols, trace_image_between_lines # These functions handle the summing of flux
 from spec1d.lmfit_funcs import fit_box_to_step_function, fit_gaussians_to_emission_lines
 from spec1d.align_distorted_spectra import align_distorted_spectra
-
+import glob
 
 ########################################
 # Argumant parser
@@ -347,65 +347,41 @@ if __name__=="__main__":
         p_upper, p_lower = np.poly1d(z_upper), np.poly1d(z_lower)
         p_x = h[0].data.shape[1]-np.arange(h[0].data.shape[1])
         slit_width_vertical =  z_upper[1] - z_lower[1]
-        print(slit_width_vertical) 
 
         # Now plot various things before closing
         plt.fill_between(p_x, p_upper(p_x) , p_lower(p_x), color='green', alpha=0.3, edgecolor='green')
         plt.fill_between(p_x, p_upper(p_x) +7 + slit_width_vertical , p_upper(p_x) +7, color='red', alpha=0.3, edgecolor='red')
         plt.fill_between(p_x, p_lower(p_x) -7 , p_lower(p_x) -7 - slit_width_vertical, color='red', alpha=0.3, edgecolor='red')
-        plt.show()
         plt.savefig('{:}_{:}_image.png'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), bbox='tight')
         plt.close()
 
         # Now extract the stellar fluxes along with the average of the sky
-        print(z_upper[1], z_lower[1])
         stellar_flux = trace_image_between_lines((z_upper[0] + z_lower[0])/2., z_upper[1], z_lower[1],   h[0].data, vertical_oversample=10) 
         upper_sky_flux = trace_image_between_lines((z_upper[0] + z_lower[0])/2., z_upper[1] - (slit_width_vertical+7), z_lower[1] - (slit_width_vertical+7),   h[0].data, vertical_oversample=10) 
         lower_sky_flux = trace_image_between_lines((z_upper[0] + z_lower[0])/2., z_upper[1] + (slit_width_vertical+7), z_lower[1] + (slit_width_vertical+7),   h[0].data, vertical_oversample=10) 
         average_sky_flux = (upper_sky_flux + lower_sky_flux) / 2
+        sky_subtracted_flux = stellar_flux - average_sky_flux
 
-        plt.figure()
-        plt.plot(stellar_flux)
-        plt.figure()
-        plt.plot(average_sky_flux)
+        figg, axs = plt.subplots(nrows=1, ncols=1, figsize=(15,10))
+        axs.set_title('{:} [grating {:} Angle {:}]'.format(args.extract_science, grating, gratingangle))
 
-        plt.figure()
-        plt.plot(stellar_flux-average_sky_flux)
-
-        plt.show()
-
-        # now create the iamge interpolater
-        image_interpolater = interp2d(np.arange(h[0].data.shape[1]), np.arange(h[0].data.shape[0]), h[0].data)
-        npoints = 100
-        flux = np.zeros(h[0].data.shape[1])
-        for i in range(h[0].data.shape[1]):
-            x = np.linspace(i, i + xs, npoints )
-            y_star = np.linspace(p_lower(i), p_upper(i), npoints)
-            y_sky_low = np.linspace(p_lower(i)-20, p_upper(i)-20, npoints)
-            flux[i] = (np.sum(image_interpolater(x,y_star)) -  np.sum(image_interpolater(x,y_sky_low)))*dist / npoints
-        
-        figg, axs = plt.subplots(nrows=2, ncols=1, figsize=(15,10))
-        axs[0].set_title('{:} [grating {:} Angle {:}]'.format(args.extract_science, grating, gratingangle))
-
-        x = np.arange(h[0].data.shape[1])[::-1]
+        x = np.arange(sky_subtracted_flux.shape[0])[::-1]
 
         # Now we need to re-interpolate onto a wavelength axis
         mask = ((x > wavecal_min) & (x < wavecal_max))  # wavecal_min, wavecal_max
         wavelength = pcalibration(x) #np.interp(x, xcalibration, ycalibration) # convert pixel to wavelength
         #mask = mask & ~((wavelength > 686.49442) & (wavelength < 688.1848))
         wavelength = wavelength[mask]
-        flux = flux[mask]
-        flux_err = np.ones(flux.shape[0])*10
-        median_max = maximum_filter(median_filter(flux,150),150)
+        sky_subtracted_flux = sky_subtracted_flux[mask]
+        flux_err = np.ones(sky_subtracted_flux.shape[0])*10
 
-        axs[0].plot(wavelength, flux, 'k')
-        axs[0].set(xlabel='Wavelength [nm]', ylabel='Counts')
-        axs[1].plot(wavelength, flux/median_max, 'k')
-        axs[1].set(xlabel='Wavelength [nm]', ylabel='Counts')
+        axs.plot(wavelength, sky_subtracted_flux, 'k')
+        axs.set(xlabel='Wavelength [nm]', ylabel='Counts')
+        plt.tight_layout()
         plt.savefig('{:}_{:}_spectra.png'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), bbox='tight')
         plt.close()
 
-        tmp = np.array([wavelength.tolist(),flux.tolist(),flux_err.tolist()]).T[::-1]
+        tmp = np.array([wavelength.tolist(),sky_subtracted_flux.tolist(),flux_err.tolist()]).T[::-1]
         np.savetxt('{:}_{:}_spectra.dat'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), tmp)
         #tmp = np.array([wavelength.tolist(),(flux/median_max).tolist(),flux_err.tolist()]).T[::-1]
         #np.savetxt('{:}_{:}_spectra_normlised.dat'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), tmp)
