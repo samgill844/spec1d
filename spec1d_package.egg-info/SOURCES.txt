@@ -20,3 +20,5 @@ src/spec1d/image_tracing.py
 src/spec1d/lmfit_funcs.py
 src/spec1d/data/gr5_-4_ref_lines.dat
 src/spec1d/data/gr5_-4_ref_spectra.dat
+src/spec1d/data/gr7_15_ref_lines.dat
+src/spec1d/data/gr7_15_ref_spectra.dat

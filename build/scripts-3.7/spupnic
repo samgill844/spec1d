@@ -15,7 +15,7 @@ from multiprocessing import Pool
 import matplotlib.patches as patches
 from astropy.table import Table, Column, Row
 #plt.style.use('dark_background')
-
+from lmfit import Parameters, fit_report, minimize
 # My own imports
 from spec1d.create_log import create_log # This function re-creates a log file for a night based on the fits files there
 from spec1d.image_tracing import trace_image_between_rows, trace_image_between_cols, trace_image_between_lines # These functions handle the summing of flux
@@ -196,6 +196,7 @@ if __name__=="__main__":
         # so we can easily match spectral lines
         #np.save('ref_traced', np.array([ref_spectra, traced_flux]))
         spreader, lmfit_minimize_result  = align_distorted_spectra(ref_spectra, traced_flux, verbose=args.verbose)
+        #print(fit_report(lmfit_minimize_result))
         #ax3.plot(np.arange(ref_spectra.shape[0]), spreader(np.arange(ref_spectra.shape[0]), lmfit_minimize_result.params), 'b--', label='Distorted model', alpha = 0.5)
 
         # Now load the calibration lines 
@@ -215,10 +216,11 @@ if __name__=="__main__":
         # We need to match calibration[cal,0] with np.arange(traced_flux.shape[0])[traced_flux_peaks]
         mask = np.zeros(calibration.shape[0], dtype = np.bool)
         for i in range(len(calibration)):
+            #print(calibration[i,0] ,  np.arange(traced_flux.shape[0])[traced_flux_peaks])
             if np.sum(np.abs(calibration[i,0] -   np.arange(traced_flux.shape[0])[traced_flux_peaks]) < 5) ==1 : mask[i] = True
         calibration = calibration[mask]
-        #ax4.scatter(calibration[:,0], np.interp(calibration[:,0], np.arange(traced_flux.shape[0]), traced_flux), s=80, facecolors='none', edgecolors='r')
-
+        #ax2.scatter(calibration[:,0], np.interp(calibration[:,0], np.arange(traced_flux.shape[0]), traced_flux), s=80, facecolors='none', edgecolors='r')
+        #plt.show()
         # Now fit Gaussians at each line to find the best line center - replace the calibrations pixel positions with these positions
         calibration[:,0], aplitudes, sigmas, gauss_model_out = fit_gaussians_to_emission_lines(traced_flux, calibration[:,0], verbose=args.verbose)
         #ax4.plot(np.arange(traced_flux.shape[0]), gauss_model_out.best_fit, c='r', alpha = 0.8, ls='--', label='Fitted Gaussians')
@@ -283,11 +285,11 @@ if __name__=="__main__":
         # Now find ThAr within specified time limit
         t = Table.read('log.fits') 
         time_of_obs = t['HJD'][np.where(t['FILE']==args.extract_science)[0][0]]
-        arc_table = t[(t['EXPTYPE']=='ARC') & (t['ARC-LAMP']=='CuNe')]
+        arc_table = t[(t['EXPTYPE']=='ARC')]
         arc_table = arc_table[np.abs(arc_table['HJD'] - time_of_obs) < 1/24] 
         if len(arc_table) == 0 : 
             #raise ValueError('No arc calibrations within 1 hr')
-            print('No arcs within 1 hour of obs :(')
+            print('No arcs within 1 hour of obs :(, using all')
             exit()
 
         # Ideally, we want to take the average of the one before and the one after.
@@ -449,7 +451,7 @@ if __name__=="__main__":
 
         # Load the log file
         t = Table.read('log.fits')
-        t = t[(t['EXPTYPE']=='ARC') & (t['ARC-LAMP']=='CuNe')]
+        t = t[(t['EXPTYPE']=='ARC')] #& (t['ARC-LAMP']=='CuNe')]
         with Pool(args.threads) as pool:
             pool.map(extract_all_CuNe_worker, range(len(t)))
 
