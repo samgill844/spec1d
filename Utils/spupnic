@@ -208,6 +208,8 @@ if __name__=="__main__":
         # Now the problim with calibration is that some peaks are there and some are not. 
         # Lets do a peak find of the traced flux to see what peaks match up with the calibration
         traced_flux_peaks, _ = find_peaks(traced_flux, height = 0.6*np.std(traced_flux)) 
+        traced_flux_peaks, _ = find_peaks(traced_flux, height = 0.1*np.std(traced_flux)) 
+
         #ax4.plot(np.arange(traced_flux.shape[0]), traced_flux, c='y', alpha = 0.8, ls='--', label='Trace spectra')
         #ax4.scatter(np.arange(traced_flux.shape[0])[traced_flux_peaks], traced_flux[traced_flux_peaks], c='y', marker = "2", label='Traced spectra peaks')
         #for cal in range(len(calibration)) : ax4.axvline(calibration[cal,0], ls = '-', c='b', alpha = 0.5, label = 'Calibration peaks' if cal ==0 else None)

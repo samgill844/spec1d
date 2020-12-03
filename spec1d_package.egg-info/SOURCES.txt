@@ -22,3 +22,5 @@ src/spec1d/data/gr5_-4_ref_lines.dat
 src/spec1d/data/gr5_-4_ref_spectra.dat
 src/spec1d/data/gr7_15_ref_lines.dat
 src/spec1d/data/gr7_15_ref_spectra.dat
+src/spec1d/data/backup/gr7_-15_ref_lines.dat
+src/spec1d/data/backup/gr7_-15_ref_spectra.dat
