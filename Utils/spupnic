@@ -19,9 +19,10 @@ from lmfit import Parameters, fit_report, minimize
 # My own imports
 from spec1d.create_log import create_log # This function re-creates a log file for a night based on the fits files there
 from spec1d.image_tracing import trace_image_between_rows, trace_image_between_cols, trace_image_between_lines # These functions handle the summing of flux
-from spec1d.lmfit_funcs import fit_box_to_step_function, fit_gaussians_to_emission_lines
+from spec1d.lmfit_funcs import fit_box_to_step_function, fit_box_to_step_function_science, fit_gaussians_to_emission_lines
 from spec1d.align_distorted_spectra import align_distorted_spectra
 import glob
+from astroscrappy import detect_cosmics 
 
 from scipy.stats import median_absolute_deviation
 from scipy.ndimage import median_filter
@@ -71,6 +72,8 @@ parser.add_argument('-j',
 parser.add_argument('--extract_all_CuNe', action="store_true", default=False, help="Extract all CuNe lamp spectra")
 parser.add_argument('--extract_all_science', action="store_true", default=False, help="Extract all science spectra")
 parser.add_argument('--process_folder', action="store_true", default=False, help="Process entire night of data.")
+parser.add_argument('--reject_cosmics', action="store_true", default=False, help="Process entire night of data.")
+
 
 
 ########################################
@@ -81,7 +84,9 @@ def extract_all_CuNe_worker(i):
     os.system('spupnic --extract_CuNe {:} --grating {:} --gratingangle {:}'.format(t['FILE'][i], args.grating, args.gratingangle))
 
 def extract_all_science_worker(i):
-    os.system('spupnic --extract_science {:} --grating {:} --gratingangle {:}'.format(t['FILE'][i], args.grating, args.gratingangle))
+    cmd = 'spupnic --extract_science {:} --grating {:} --gratingangle {:}'.format(t['FILE'][i], args.grating, args.gratingangle)
+    if args.reject_cosmics : cmd += ' --reject_cosmics'
+    os.system(cmd)
 
 if __name__=="__main__":
     # First, parse the args 
@@ -269,6 +274,9 @@ if __name__=="__main__":
 
     if args.extract_science != 'no':
         h = fits.open(args.extract_science)
+        if args.reject_cosmics:
+            _, xx = detect_cosmics(h[0].data)
+            h[0].data = xx
         if args.grating =='None' : grating = h[0].header['GRATING']
         else :                     grating = args.grating
         if args.gratingangle ==-99 : gratingangle = int(str(h[0].header['GR-ANGLE']).split('.')[0])
@@ -344,21 +352,24 @@ if __name__=="__main__":
 
 
         # Now trace the spectral line        
-        upper_line, lower_line = np.zeros(np.arange(25,1950)[::25].shape[0]), np.zeros(np.arange(25,1950)[::25].shape[0])
+        upper_line, lower_line, heights = np.zeros(np.arange(25,1950)[::25].shape[0]), np.zeros(np.arange(25,1950)[::25].shape[0]) , np.zeros(np.arange(25,1950)[::25].shape[0])
         count = 0
         for j in range(50,1950)[::25]:
             vertical_trace = trace_image_between_cols(j-5,j+5, h[0].data); vertical_trace = vertical_trace - np.percentile(vertical_trace, 20);  vertical_trace = vertical_trace / np.max(vertical_trace)
-            _, _, _, _, lower_line[count], upper_line[count] = fit_box_to_step_function(vertical_trace, [np.max(vertical_trace), np.argmax(vertical_trace), 3])
+            heights[count], _, _, _, lower_line[count], upper_line[count] = fit_box_to_step_function_science(vertical_trace, [np.max(vertical_trace), np.argmax(vertical_trace), 5])
             count +=1
+        line_mask = heights > 0.01
+        lower_line = lower_line[line_mask]
+        upper_line = upper_line[line_mask]
 
         # Median cut, just in case
         lower_line[(lower_line < (np.median(lower_line) - 5)) | (lower_line > (np.median(lower_line) + 5))] = np.median(lower_line)
         upper_line[(upper_line < (np.median(upper_line) - 5)) | (upper_line > (np.median(upper_line) + 5))] = np.median(upper_line)
-        plt.scatter(np.arange(25,1950)[::25],  upper_line, c = 'r', s = 2)
-        plt.scatter(np.arange(25,1950)[::25], lower_line, c='r', s = 2)
+        plt.scatter(np.arange(25,1950)[::25][line_mask],  upper_line, c = 'r', s = 2)
+        plt.scatter(np.arange(25,1950)[::25][line_mask], lower_line, c='r', s = 2)
         
         # Now poly fit these points to trace the edge of the slit
-        z_upper, z_lower = np.polyfit(np.arange(25,1950)[::25],  upper_line, 1), np.polyfit(np.arange(25,1950)[::25],  lower_line, 1)
+        z_upper, z_lower = np.polyfit(np.arange(25,1950)[::25][line_mask],  upper_line, 1), np.polyfit(np.arange(25,1950)[::25][line_mask],  lower_line, 1)
         p_upper, p_lower = np.poly1d(z_upper), np.poly1d(z_lower)
         p_x = h[0].data.shape[1]-np.arange(h[0].data.shape[1])
         slit_width_vertical =  z_upper[1] - z_lower[1]
@@ -375,6 +386,7 @@ if __name__=="__main__":
         upper_sky_flux = trace_image_between_lines((z_upper[0] + z_lower[0])/2., z_upper[1] - (slit_width_vertical+7), z_lower[1] - (slit_width_vertical+7),   h[0].data, vertical_oversample=10) 
         lower_sky_flux = trace_image_between_lines((z_upper[0] + z_lower[0])/2., z_upper[1] + (slit_width_vertical+7), z_lower[1] + (slit_width_vertical+7),   h[0].data, vertical_oversample=10) 
         
+        '''
         # Now look at the sky fluxes to see if we have any outliers from cosmics
         diff = upper_sky_flux - lower_sky_flux  ; diff = diff - np.mean(diff)
         threshold = args.skyflux_sigma*np.std(diff)
@@ -385,12 +397,13 @@ if __name__=="__main__":
         lower_sky_flux[cosmics_idx] = np.interp(xxx[cosmics_idx] , np.delete(xxx,cosmics_idx)  , np.delete(lower_sky_flux,cosmics_idx)  )
 
 
-
+        
         # now do the stellar flux 
         filtered_sky = median_filter(stellar_flux, 20)
         diff = stellar_flux - filtered_sky
         threshold = args.stellarflux_sigma*np.std(diff)
-        cosmics_idx = np.where(diff > threshold)[0]
+        cosmics_idx = np.concatenate((np.where(diff > threshold)[0], cosmics_idx))
+        
         print('Rejecting stellar flux cosmics at ', cosmics_idx)
         pad = 5
         new_cosmics_idx = np.copy(cosmics_idx)
@@ -401,14 +414,14 @@ if __name__=="__main__":
         new_cosmics_idx = np.unique(new_cosmics_idx)
 
         stellar_flux[new_cosmics_idx] = np.interp(xxx[new_cosmics_idx] , np.delete(xxx,new_cosmics_idx)  , np.delete(stellar_flux,new_cosmics_idx)  )
-
+        '''
 
         np.save( 'star', stellar_flux)
         np.save( 'upsky', upper_sky_flux)
         np.save( 'lowsky', lower_sky_flux)
 
         average_sky_flux = (upper_sky_flux + lower_sky_flux) / 2
-        sky_subtracted_flux = stellar_flux - average_sky_flux
+        sky_subtracted_flux = stellar_flux - average_sky_flux#[::-1]
 
         figg, axs = plt.subplots(nrows=1, ncols=1, figsize=(15,10))
         axs.set_title('{:} [grating {:} Angle {:}]'.format(args.extract_science, grating, gratingangle))
@@ -424,6 +437,8 @@ if __name__=="__main__":
         flux_err = np.ones(sky_subtracted_flux.shape[0])*10
 
         axs.plot(wavelength, sky_subtracted_flux, 'k')
+        #axs.plot(wavelength, stellar_flux[mask], 'k')
+
         axs.set(xlabel='Wavelength [nm]', ylabel='Counts')
         plt.tight_layout()
         plt.savefig('{:}_{:}_spectra.png'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']))
