@@ -28,10 +28,10 @@ Coming soon. For now, we don't use them and everything works pretty well.
 
 ## Step 3 - Reduction of CuNe calibration spectra. 
 
-We need to reduce the calibration spectra so that we can accurately calibrate the wavelength axis of the science frames. To do this, we need to pass a CuNe fits file name long with a path to the reference spectra. This code automatically extracts information about the grating and angle (e.g. gr5 and -4) from the fits headers. If for whatever this isnt right, you'll need to fix them.
+We need to reduce the calibration spectra so that we can accurately calibrate the wavelength axis of the science frames. To do this, we need to pass a CuNe fits file name long with a path to the reference spectra. This code automatically extracts information about the grating and angle (e.g. gr5 and -4) from the fits headers. If for whatever this isnt right, you'll need to fix them by exliplicitly stating the grating and the grating angle (I would do this for sanity).
 
 ```bash
-spupnic --extract_CuNe a1471096.fits --path_to_ref_spectra ~/Software/SpUpNIC/CuNe_ref_spectra
+spupnic --extract_CuNe a2101095.fits --grating gr7 --gratingangle 17
 ```
 This will create 3 new files in our directory with the prefix a1471096 - two plots and a calibratation file. The first plot shows the CCD image along with the lines identified and a trace of the slit. The second plot shows the extracted spectrum and the associated lines marked up. In the output you should see something like this
 
@@ -43,19 +43,17 @@ This will create 3 new files in our directory with the prefix a1471096 - two plo
 
 ```bash
 Calibration:
-	182.56421197218626 -> 621.728 nm
-	268.83513631590824 -> 626.65 nm
-	387.961762118894 -> 633.443 nm
-	473.2948346762896 -> 638.299 nm
-	507.18606197989385 -> 640.225 nm
-	691.8217835455781 -> 650.653 nm
-	738.8112541217184 -> 653.288 nm
-	857.3613794904414 -> 659.895 nm
-	1001.2105936018824 -> 667.828 nm
-	1072.1899364353528 -> 671.704 nm
-	1470.9127530198862 -> 692.947 nm
-	1671.6209164671052 -> 703.241 nm
-	1957.88402644295 -> 717.394 nm
+	1788.5604183193573 -> 811.5311 nm
+	1751.2539996291457 -> 800.61567 nm
+	1646.944371808619 -> 772.42072 nm
+	1614.7128689877975 -> 763.5106 nm
+	1568.5214421584471 -> 750.38691 nm
+	1524.0965075784022 -> 738.39805 nm
+	1410.6944539856065 -> 706.72181 nm
+	1374.4206152596084 -> 696.54307 nm
+	606.4163648145163 -> 476.48646 nm
+	436.84098086506714 -> 427.75282 nm
+	410.99737650954694 -> 419.8317 nm
 ```
 These tell you which lines have been sucessfuly matched with the reference spectra. If there aren't any or very few, check the plots - something has gone wrong. This information is saved in a .npy extension which can be then used to calibrate nearby science frames. 
 
@@ -86,3 +84,11 @@ Like the CuNe files, we can reduce these en-mass by passing:
 ```bash
 spupnic --grating gr5 --gratingangle -4 --extract_all_science --threads 12
 ```
+
+## Cosmic ray rejection
+
+When processing long exposures, cosmic ray are a pain. We use astroscrappy to remove them from the image by interpolating from around the affected pixels. To use this feature, add the flag
+```bash
+----reject_cosmics
+```
+and it should work for you.

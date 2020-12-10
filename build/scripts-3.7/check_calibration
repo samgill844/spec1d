@@ -1,0 +1,66 @@
+#!/home/sam/anaconda3/bin/python
+
+########################################
+# IMPORTS
+########################################
+import matplotlib.pyplot as plt
+import numpy as np 
+import glob
+
+
+files = glob.glob('a*.npy')
+
+
+cals = []
+for file in files:
+    cals.append(np.load(file))
+
+
+unique_wavelengths = None
+
+for i in range(len(cals)):
+    if i==0 : unique_wavelengths = cals[i][:,1] 
+    else: unique_wavelengths = np.concatenate((unique_wavelengths, cals[i][:,1] ))
+
+unique_wavelengths = np.unique(unique_wavelengths)
+unique_wavelengths = np.sort(unique_wavelengths)
+
+
+ncols = 4
+nrows = int(np.ceil(len(unique_wavelengths) / ncols))
+f, axs = plt.subplots(nrows = nrows, ncols = ncols, figsize=(4*ncols, 4*nrows))
+axs = np.atleast_2d(axs)
+
+for i in range(unique_wavelengths.shape[0]):
+    plot_idxi, plot_idxj = i // ncols, np.mod(i,ncols) #-1
+    vals = []
+    for j in range(len(cals)):
+        vals.append(cals[j][:,0][ cals[j][:,1]== unique_wavelengths[i]])
+    axs[plot_idxi, plot_idxj].hist(vals)
+    axs[plot_idxi, plot_idxj].set(xlabel='Pixel', title='{:.3f} nm'.format(unique_wavelengths[i]))
+    for tick in axs[plot_idxi, plot_idxj].get_xticklabels():
+        tick.set_rotation(20)
+
+for i in range(plot_idxj+1, 4):
+    axs[plot_idxi, i].set_axis_off()
+plt.tight_layout()
+
+
+
+f = plt.figure()
+vals = []
+for cal in cals:
+    x,y = cal.T
+    diffs = y - np.poly1d(np.polyfit(x,y,4))(x)
+    plt.scatter(x, diffs, c='k')
+    for diff in diffs : vals.append(diff)
+
+plt.xlabel('Wavelength [nm]')
+plt.ylabel('Calibration accuracy')
+plt.tight_layout()
+
+
+plt.figure()
+plt.hist(vals)
+plt.show() 
+plt.tight_layout()

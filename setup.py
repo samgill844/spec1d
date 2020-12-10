@@ -12,6 +12,6 @@ setup(
     package_dir={'spec1d': 'src/spec1d'},
     #package_data={'spec1d': ['data/gr5_-4_ref_spectra.dat', 'data/gr5_-4_ref_lines.dat']},
     package_data={'spec1d': ['data/*.dat']},
-    scripts=['Utils/spupnic'],
+    scripts=['Utils/spupnic' , 'Utils/check_calibration'],
     install_requires=['numba']
 )

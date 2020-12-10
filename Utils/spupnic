@@ -73,6 +73,7 @@ parser.add_argument('--extract_all_CuNe', action="store_true", default=False, he
 parser.add_argument('--extract_all_science', action="store_true", default=False, help="Extract all science spectra")
 parser.add_argument('--process_folder', action="store_true", default=False, help="Process entire night of data.")
 parser.add_argument('--reject_cosmics', action="store_true", default=False, help="Process entire night of data.")
+parser.add_argument('--make_reference_spectra', action="store_true", default=False, help="Process entire night of data.")
 
 
 
@@ -141,7 +142,7 @@ if __name__=="__main__":
         #ax3.set(ylabel = 'Normalised Counts', xlabel='Pixel')
         #ax4.set(ylabel = 'Normalised Counts', xlabel='Pixel')
 
-        ax2.plot(np.arange(initial_spectra.shape[0]), initial_spectra, c='b', alpha = 0.4, ls='--', label='Initial spectra')
+        #ax2.plot(np.arange(initial_spectra.shape[0]), initial_spectra, c='b', alpha = 0.4, ls='--', label='Initial spectra')
         #ax2.plot(np.arange(initial_spectra.shape[0])[peaks], initial_spectra[peaks], 'r+', label='Initial spectra peaks')
 
 
@@ -199,7 +200,10 @@ if __name__=="__main__":
         # the reference spectrum.
         # We want a transorm of the pixel axis to the referece pixel axis
         # so we can easily match spectral lines
-        #np.save('ref_traced', np.array([ref_spectra, traced_flux]))
+        if args.make_reference_spectra: 
+            print('Making reference spectre')
+            np.save('ref_traced', np.array([ref_spectra, traced_flux]))
+            exit()
         spreader, lmfit_minimize_result  = align_distorted_spectra(ref_spectra, traced_flux, verbose=args.verbose)
         #print(fit_report(lmfit_minimize_result))
         #ax3.plot(np.arange(ref_spectra.shape[0]), spreader(np.arange(ref_spectra.shape[0]), lmfit_minimize_result.params), 'b--', label='Distorted model', alpha = 0.5)
@@ -213,10 +217,10 @@ if __name__=="__main__":
         # Now the problim with calibration is that some peaks are there and some are not. 
         # Lets do a peak find of the traced flux to see what peaks match up with the calibration
         traced_flux_peaks, _ = find_peaks(traced_flux, height = 0.6*np.std(traced_flux)) 
-        traced_flux_peaks, _ = find_peaks(traced_flux, height = 0.1*np.std(traced_flux)) 
+        traced_flux_peaks, _ = find_peaks(traced_flux, height = 0.1*np.std(traced_flux), distance = 5) 
 
         #ax4.plot(np.arange(traced_flux.shape[0]), traced_flux, c='y', alpha = 0.8, ls='--', label='Trace spectra')
-        #ax4.scatter(np.arange(traced_flux.shape[0])[traced_flux_peaks], traced_flux[traced_flux_peaks], c='y', marker = "2", label='Traced spectra peaks')
+        ax2.scatter(np.arange(traced_flux.shape[0])[traced_flux_peaks], traced_flux[traced_flux_peaks], c='y', marker = "2", label='Traced spectra peaks')
         #for cal in range(len(calibration)) : ax4.axvline(calibration[cal,0], ls = '-', c='b', alpha = 0.5, label = 'Calibration peaks' if cal ==0 else None)
 
         # Find the ones we have peaks for 
@@ -224,7 +228,7 @@ if __name__=="__main__":
         mask = np.zeros(calibration.shape[0], dtype = np.bool)
         for i in range(len(calibration)):
             #print(calibration[i,0] ,  np.arange(traced_flux.shape[0])[traced_flux_peaks])
-            if np.sum(np.abs(calibration[i,0] -   np.arange(traced_flux.shape[0])[traced_flux_peaks]) < 5) ==1 : mask[i] = True
+            if np.sum(np.abs(calibration[i,0] -   np.arange(traced_flux.shape[0])[traced_flux_peaks]) < 4) ==1 : mask[i] = True
         calibration = calibration[mask]
         #ax2.scatter(calibration[:,0], np.interp(calibration[:,0], np.arange(traced_flux.shape[0]), traced_flux), s=80, facecolors='none', edgecolors='r')
         #plt.show()
@@ -249,6 +253,8 @@ if __name__=="__main__":
 
 
         # Now save the calibration
+        idx_sort = np.argsort(calibration[:,0])
+        calibration = calibration[idx_sort]
         np.save('{:}_{:}_{:}_calibration'.format(args.extract_CuNe.split('.')[0], grating, gratingangle), calibration)
 
         # Tidy up the plot and save
@@ -329,8 +335,8 @@ if __name__=="__main__":
                 FAILED_WAVECAL=True
             else:
                 # This is when it is sucessful
-                #xcalibration = (xx_before + xx_after) / 2.
-                #ycalibration = np.copy(yy_before)
+                xcalibration = (xx_before + xx_after) / 2.
+                ycalibration = np.copy(yy_before)
                 print('Wavelength [nm]    Pixel before [{:}]          Pixel after [{:}]      Delta Pixel'.format(before_filename, after_filename))
                 for i in range(yy_after.shape[0]):
                     print('{:.3f}            {:.5f}                                        {:.5f}                                    {:.5f} {:}'.format(yy_after[i], xx_before[i], xx_after[i], xx_after[i] - xx_before[i],  'Problem?' if np.max(np.abs(xx_after[i] - xx_before[i]))> 1  else ''))
@@ -430,7 +436,9 @@ if __name__=="__main__":
 
         # Now we need to re-interpolate onto a wavelength axis
         mask = ((x > wavecal_min) & (x < wavecal_max))  # wavecal_min, wavecal_max
-        wavelength = pcalibration(x) #np.interp(x, xcalibration, ycalibration) # convert pixel to wavelength
+        #wavelength = pcalibration(x) #np.interp(x, xcalibration, ycalibration) # convert pixel to wavelength
+        wavelength = np.interp(x, xcalibration, ycalibration) # convert pixel to wavelength
+
         #mask = mask & ~((wavelength > 686.49442) & (wavelength < 688.1848))
         wavelength = wavelength[mask]
         sky_subtracted_flux = sky_subtracted_flux[mask]
