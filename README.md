@@ -20,7 +20,7 @@ cd ~/Documents/NGTS_monotransit_WG/SAAO/saao-1.9/0130
 spupnic --create_log
 ```
 
-This will make a file called log.fits in the same directory which will be used for the reduction of data. From the log file, you can easily see which frames are science, calibration, dome flats or biases. 
+This will make a file called log.fits in the same directory which will be used for the reduction of data. From the log file, you can easily see which frames are science, calibration, dome flats or biases. For now, do not worry if you are using a CuAr lamp, they all go through the CuNe flag for now at least. 
 
 ## Step 2 - Bias subtraction and Flat-field corrections. 
 
