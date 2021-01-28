@@ -50,12 +50,9 @@ def arg_parse():
                 '--model',
                 help='The model to use. G = Gaussian [default], L = Lorentzian, GL = Gaussian + Lorentzian.',
                 default='G', type=str) 
-    p.add_argument('-f', 
-                '--output',
-                help='Write out these results to text file.',
-                default='None', type=str) 
 
     p.add_argument('--printfit', action="store_true", default=False)
+    p.add_argument('--output', action="store_true", default=False)
 
     return p.parse_args()
 
@@ -74,9 +71,10 @@ if __name__=="__main__":
             cmd += ' --wavemin {:}'.format(args.wavemin)
             cmd += ' --wavemax {:}'.format(args.wavemax)
             cmd += ' --model {:}'.format(args.model)
-            cmd += ' --output {:}'.format(args.output)
             if args.normalise : cmd += ' --normalise'
             if args.printfit : cmd += ' --printfit'
+            if args.output : cmd += ' --output'
+
             print(cmd)
             os.system(cmd)
         exit()
@@ -165,8 +163,8 @@ if __name__=="__main__":
     plt.savefig('{:}.png'.format(args.filename.split('/')[-1][:-5]))
     plt.close()
 
-    if args.output is not 'None':
-        f = open(args.output, 'a+')
+    if args.output:
+        f = open('{:}_RV.txt'.format(name), 'a+')
         f.write('{:} {:} {:} {:} {:}\n'.format(HJD, (Halpha_vrad - BV).nominal_value, (Halpha_vrad - BV).std_dev, BV, name))
         f.close()
 
