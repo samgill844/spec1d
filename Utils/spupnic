@@ -26,6 +26,8 @@ from astroscrappy import detect_cosmics
 
 from scipy.stats import median_absolute_deviation
 from scipy.ndimage import median_filter
+from astropy.coordinates import SkyCoord
+import astropy.units as u
 ########################################
 # Argumant parser
 ########################################
@@ -74,6 +76,7 @@ parser.add_argument('--extract_all_science', action="store_true", default=False,
 parser.add_argument('--process_folder', action="store_true", default=False, help="Process entire night of data.")
 parser.add_argument('--reject_cosmics', action="store_true", default=False, help="Process entire night of data.")
 parser.add_argument('--make_reference_spectra', action="store_true", default=False, help="Process entire night of data.")
+parser.add_argument('--purge', action="store_true", default=False, help="Process entire night of data.")
 
 
 
@@ -82,22 +85,25 @@ parser.add_argument('--make_reference_spectra', action="store_true", default=Fal
 ########################################
 
 def extract_all_CuNe_worker(i):
-    os.system('spupnic --extract_CuNe {:} --grating {:} --gratingangle {:}'.format(t['FILE'][i], args.grating, args.gratingangle))
+    try : os.system('spupnic --extract_CuNe {:} --grating {:} --gratingangle {:}'.format(t['FILE'][i], args.grating, args.gratingangle))
+    except : pass 
 
 def extract_all_science_worker(i):
     cmd = 'spupnic --extract_science {:} --grating {:} --gratingangle {:}'.format(t['FILE'][i], args.grating, args.gratingangle)
     if args.reject_cosmics : cmd += ' --reject_cosmics'
-    os.system(cmd)
+    try : os.system(cmd)
+    except : pass 
 
 if __name__=="__main__":
     # First, parse the args 
     args = parser.parse_args()
 
+    # Check for purge 
+    if args.purge:
+        os.system('rm *.npy *.png log.fits *_spectra.fits')
+
     # Create the logfile
     if args.create_log : create_log()
-
-
-
 
     if args.extract_CuNe!='no':
         # First, extract the image
@@ -185,7 +191,6 @@ if __name__=="__main__":
         traced_flux = traced_flux[::-1] / traced_flux.max() # normalise and reverse flux
         traced_flux = traced_flux - np.percentile(traced_flux, 20) # remove the 20th percentile to align bottom with 0
         ax2.plot(np.arange(traced_flux.shape[0]), traced_flux, c='k', alpha = 0.4, ls='--', label = 'Traced spectra')
-
 
         # Now we need to load in the reference spectra 
         # that corrosponds to the mask        
@@ -453,7 +458,17 @@ if __name__=="__main__":
         plt.close()
 
         tmp = np.array([wavelength.tolist(),sky_subtracted_flux.tolist(),flux_err.tolist()]).T[::-1]
-        np.savetxt('{:}_{:}_spectra.dat'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), tmp)
+        #np.savetxt('{:}_{:}_spectra.dat'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), tmp)
+
+        # Save data as fits arrays 
+        card = fits.PrimaryHDU(tmp)
+        coord = SkyCoord('{:} {:}'.format(h[0].header['TARG-RA'], h[0].header['TARG-DEC']), unit=(u.hourangle, u.deg))
+        card.header.set('RA',  float(coord.ra.value) , 'righ asc')
+        card.header.set('DEC', float(coord.dec.value) , 'Dec')
+        card.header.set('OBJECT', str(h[0].header['OBJECT']) , 'name of object')
+        card.header.set('HJD-OBS', float(h[0].header['HJD-OBS']+2400000) , 'HJD of obs')
+        fits.HDUList([card]).writeto('{:}_{:}_spectra.fits'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), overwrite=True)
+
         #tmp = np.array([wavelength.tolist(),(flux/median_max).tolist(),flux_err.tolist()]).T[::-1]
         #np.savetxt('{:}_{:}_spectra_normlised.dat'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), tmp)
 

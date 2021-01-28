@@ -1,0 +1,181 @@
+#!/home/sam/anaconda3/bin/python
+
+########################################
+# IMPORTS
+########################################
+import matplotlib.pyplot as plt
+import numpy as np, os, sys
+import argparse
+from scipy.ndimage import median_filter, maximum_filter
+from scipy.interpolate import UnivariateSpline
+from lmfit.models import GaussianModel, LorentzianModel
+import lmfit 
+from uncertainties import ufloat 
+from barycorrpy import get_BC_vel
+from astropy.io import fits 
+from astropy.time import Time 
+import glob 
+# Arg parser
+def arg_parse():
+    """
+    Parse the command line arguments
+    """
+    p = argparse.ArgumentParser("Reduce whole actions.")
+    p.add_argument('filename',
+                   help='The filename',
+                   type=str) 
+
+    p.add_argument('--normalise', action="store_true", default=False)
+    p.add_argument('-a', 
+                '--median_filter_size',
+                help='The size of the median_filter',
+                default=20, type=int)   
+
+    p.add_argument('-b', 
+                '--maximum_filter_size',
+                help='The size of the maximum filter',
+                default=45, type=int)   
+
+    p.add_argument('-c', 
+                '--wavemin',
+                help='The minimum of the cropped wavelength region for H-alpha',
+                default=655.5, type=float)   
+
+    p.add_argument('-d', 
+                '--wavemax',
+                help='The maximum of the cropped wavelength region for H-alpha',
+                default=657, type=float) 
+
+    p.add_argument('-e', 
+                '--model',
+                help='The model to use. G = Gaussian [default], L = Lorentzian, GL = Gaussian + Lorentzian.',
+                default='G', type=str) 
+    p.add_argument('-f', 
+                '--output',
+                help='Write out these results to text file.',
+                default='None', type=str) 
+
+    p.add_argument('--printfit', action="store_true", default=False)
+
+    return p.parse_args()
+
+# Main loop
+if __name__=="__main__":
+    # First, pars the arguments
+    args = arg_parse()
+
+    if "*" in args.filename:
+        files = glob.glob(args.filename)
+        for file in files:
+            cmd = 'spupnic_halpha {:}'.format(file)
+            cmd += ' --median_filter_size {:}'.format(args.median_filter_size)
+            cmd += ' --maximum_filter_size {:}'.format(args.maximum_filter_size)
+            cmd += ' --maximum_filter_size {:}'.format(args.maximum_filter_size)
+            cmd += ' --wavemin {:}'.format(args.wavemin)
+            cmd += ' --wavemax {:}'.format(args.wavemax)
+            cmd += ' --model {:}'.format(args.model)
+            cmd += ' --output {:}'.format(args.output)
+            if args.normalise : cmd += ' --normalise'
+            if args.printfit : cmd += ' --printfit'
+            print(cmd)
+            os.system(cmd)
+        exit()
+
+    # Now load the spectra 
+    with fits.open(args.filename) as h:
+        w,f,fe = h[0].data.T
+        ra = h[0].header['RA']
+        dec = h[0].header['DEC']
+        name = h[0].header['OBJECT']
+        HJD = h[0].header['HJD-OBS'] 
+
+    # Now get the normalisation model
+    if args.normalise : 
+        normalisation_model = maximum_filter( median_filter(f, args.median_filter_size), args.maximum_filter_size)
+        normalisation_model = UnivariateSpline(w, normalisation_model, s = 5e8)(w)
+    else : normalisation_model = np.ones(f.shape[0], dtype = np.float32)
+
+    # Process the data 
+    f_detrended = f / normalisation_model
+    f_err_detrended = fe / normalisation_model
+
+
+    mask = (w > args.wavemin) & (w < args.wavemax)
+
+
+    # Now look to fit H-Lapha 
+    
+    mod1 = GaussianModel(prefix='G')
+    par1 = mod1.guess(1 - f_detrended[mask], x=w[mask])
+
+    mod2 = LorentzianModel(prefix='L')
+    par2 = mod2.guess(1 - f_detrended[mask], x=w[mask])
+
+    if args.model=='G':
+        mod = mod1 
+        pars = par1
+    elif args.model=='L':
+        mod = mod2
+        pars = par2
+
+    elif args.model=='GL':
+        mod = mod1 + mod2 
+        pars = par1 + par2
+
+    out = mod.fit(1-f_detrended[mask], pars, x=w[mask])
+    if args.printfit : print(lmfit.fit_report(out.params))
+
+    # Now work out the radia velocity 
+    Halpha_wave = 656.2801
+    if (args.model=='G'): 
+        Halpha_wave_measured = ufloat(out.params['Gcenter'].value, out.params['Gcenter'].stderr)
+    if (args.model=='L'): 
+        Halpha_wave_measured = ufloat(out.params['Lcenter'].value, out.params['Lcenter'].stderr)
+    elif (args.model=='GL') : 
+        if out.params['Gcenter'].stderr < out.params['Lcenter'].stderr : Halpha_wave_measured = ufloat(out.params['Gcenter'].value, out.params['Gcenter'].stderr)
+        else : Halpha_wave_measured = ufloat(out.params['Lcenter'].value, out.params['Lcenter'].stderr)
+
+    c = 299792.458
+    Halpha_vrad = c*(Halpha_wave_measured - Halpha_wave)/Halpha_wave
+    BV = get_BC_vel(JDUTC=Time(HJD, format='jd'), ra=ra,dec=dec, obsname='SAAO')[0][0] / 1e3
+    print('Barycentric velocity is {:.2f} km / s'.format(BV))
+    print('H-alpha velocity is {:.2f} km / s'.format(Halpha_vrad - BV))
+
+
+    # Now plot
+    fig, ax = plt.subplots(nrows=3, ncols=1, figsize=(15,10))
+    ax[0].plot(w,f,'k', label = 'Raw Flux')
+    ax[0].plot(w,normalisation_model,'r', label = 'Normlaisation Model')
+    ax[0].legend()
+    ax[1].plot(w,f_detrended,'k', label = 'Normalised Flux')
+    model = np.ones(f_detrended.shape[0])
+    model[mask] = 1 - out.best_fit
+    ax[1].plot(w,model,'r', label = 'Fitted model')
+    ax[1].legend() 
+    ax[2].plot(w[mask], 1 - f_detrended[mask],label = 'Absorbtion')
+    ax[2].plot(w[mask], out.best_fit, 'r',label = 'Fitted model')
+    ax[2].legend()
+    ax[0].set(xlabel='Wavelength [nm]', ylabel='Raw Flux' , xlim=(np.min(w), np.max(w)))
+    ax[1].set(xlabel='Wavelength [nm]', ylabel='Normlaised Flux', xlim=(np.min(w), np.max(w)))
+    ax[2].set(xlabel='Wavelength [nm]', ylabel='Absorbtion', xlim=(args.wavemin, args.wavemax))
+
+    plt.title('Barycentric velocity = {:.3f} km / s\nHalpha = {:.3f} km / s'.format(BV, Halpha_vrad - BV))
+
+    plt.tight_layout()
+    plt.savefig('{:}.png'.format(args.filename.split('/')[-1][:-5]))
+    plt.close()
+
+    if args.output is not 'None':
+        f = open(args.output, 'a+')
+        f.write('{:} {:} {:} {:} {:}\n'.format(HJD, (Halpha_vrad - BV).nominal_value, (Halpha_vrad - BV).std_dev, BV, name))
+        f.close()
+
+
+    '''
+    plt.figure()
+
+
+
+    plt.show()
+    '''
+

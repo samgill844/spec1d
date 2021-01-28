@@ -3,6 +3,7 @@ README.md
 setup.py
 Utils/check_calibration
 Utils/spupnic
+Utils/spupnic_halpha
 dist/spec1d_package-3.8-py3.7.egg
 dist/spupnic_package-3.8-py3.7.egg
 images/fig1.png
@@ -23,7 +24,7 @@ src/spec1d/data/gr5_-4_ref_lines.dat
 src/spec1d/data/gr5_-4_ref_spectra.dat
 src/spec1d/data/gr7_15_ref_lines.dat
 src/spec1d/data/gr7_15_ref_spectra.dat
-src/spec1d/data/gr7_17_ref_lines.dat
-src/spec1d/data/gr7_17_ref_spectra.dat
+src/spec1d/data/gr7_16_ref_lines.dat
+src/spec1d/data/gr7_16_ref_spectra.dat
 src/spec1d/data/backup/gr7_-15_ref_lines.dat
 src/spec1d/data/backup/gr7_-15_ref_spectra.dat
