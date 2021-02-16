@@ -120,6 +120,13 @@ if __name__=="__main__":
         mod = mod1 + mod2 
         pars = par1 + par2
 
+    # ['Gamplitude', 'Gcenter', 'Gsigma', 'Gfwhm', 'Gheight', 'Lamplitude', 'Lcenter', 'Lsigma', 'Lfwhm', 'Lheight'])
+    pars['Gamplitude'].set(min = 0.1, max = 1)
+    pars['Gcenter'].set(min = pars['Gcenter'].value - 0.1, max = pars['Gcenter'].value + 0.1)
+
+    pars['Lamplitude'].set(min = 0.1, max = 1)
+    pars['Lcenter'].set(min = pars['Lcenter'].value - 0.1, max = pars['Lcenter'].value + 0.1)
+
     out = mod.fit(1-f_detrended[mask], pars, x=w[mask])
     if args.printfit : print(lmfit.fit_report(out.params))
 
@@ -152,6 +159,8 @@ if __name__=="__main__":
     ax[1].legend() 
     ax[2].plot(w[mask], 1 - f_detrended[mask],label = 'Absorbtion')
     ax[2].plot(w[mask], out.best_fit, 'r',label = 'Fitted model')
+    ax[2].plot(w[mask], out.init_fit, 'g',label = 'Fitted model')
+
     ax[2].legend()
     ax[0].set(xlabel='Wavelength [nm]', ylabel='Raw Flux' , xlim=(np.min(w), np.max(w)))
     ax[1].set(xlabel='Wavelength [nm]', ylabel='Normlaised Flux', xlim=(np.min(w), np.max(w)))
