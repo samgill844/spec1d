@@ -22,68 +22,54 @@ spupnic --create_log
 
 This will make a file called log.fits in the same directory which will be used for the reduction of data. From the log file, you can easily see which frames are science, calibration, dome flats or biases. For now, do not worry if you are using a CuAr lamp, they all go through the CuNe flag for now at least. 
 
-## Step 2 - Bias subtraction and Flat-field corrections. 
+## Step 2 - list science frames 
+```bash
+(base) sam@Samuels-MBP test % spupnic --list_science
+                     FILE                      HJD                   TARGET                 ARC-LAMP                  EXPTYPE
+            a1341017.fits       2458850.3728416804             TIC259592689                      OFF                  SCIENCE
+```
 
-Coming soon. For now, we don't use them and everything works pretty well. 
+These are the spectra you can reduce. 
 
-## Step 3 - Reduction of CuNe calibration spectra. 
+## Step 3 - Reduction of science images
 
-We need to reduce the calibration spectra so that we can accurately calibrate the wavelength axis of the science frames. To do this, we need to pass a CuNe fits file name long with a path to the reference spectra. This code automatically extracts information about the grating and angle (e.g. gr5 and -4) from the fits headers. If for whatever this isnt right, you'll need to fix them by exliplicitly stating the grating and the grating angle (I would do this for sanity).
+To reduce each science image, we can use this,
 
 ```bash
-spupnic --extract_CuNe a2101095.fits --grating gr7 --gratingangle 17
+spupnic --extract_science a1341017.fits --grating gr5 --gratingangle -4 [--reject_cosmics]
 ```
-This will create 3 new files in our directory with the prefix a1471096 - two plots and a calibratation file. The first plot shows the CCD image along with the lines identified and a trace of the slit. The second plot shows the extracted spectrum and the associated lines marked up. In the output you should see something like this
-
+This will load the science image, trace it, subtract the sky spectra, search for the nearest 2 calibrations, find wavlength solutions for them by doing a distorted alignment of reference spectra and re-fitting peaks, average the wavelength solution if required and re-inteprolate the science spectra 
 
 ![alt text](https://github.com/samgill844/SpUpNIC/blob/master/images/fig1.png)
 
-![alt text](https://github.com/samgill844/SpUpNIC/blob/master/images/fig2.png)
-
 
 ```bash
-Calibration:
-	1788.5604183193573 -> 811.5311 nm
-	1751.2539996291457 -> 800.61567 nm
-	1646.944371808619 -> 772.42072 nm
-	1614.7128689877975 -> 763.5106 nm
-	1568.5214421584471 -> 750.38691 nm
-	1524.0965075784022 -> 738.39805 nm
-	1410.6944539856065 -> 706.72181 nm
-	1374.4206152596084 -> 696.54307 nm
-	606.4163648145163 -> 476.48646 nm
-	436.84098086506714 -> 427.75282 nm
-	410.99737650954694 -> 419.8317 nm
-```
-These tell you which lines have been sucessfuly matched with the reference spectra. If there aren't any or very few, check the plots - something has gone wrong. This information is saved in a .npy extension which can be then used to calibrate nearby science frames. 
-
-We can cheat here, and instead of giving it every single CuNe file seperately, we can search the log file and get it to reduce every CuNe frame in the current directory. To do this, we can do something like:
-
-```bash
-spupnic --grating gr5 --gratingangle -4 --extract_all_CuNe --threads 12
+Averageing 2 calibrations
+717.394 nm    208.46273186337336      207.8453878844751      [-0.6173439788982762]
+703.241 nm    494.1781977925755      493.56004811897407      [-0.6181496736014083]
+692.947 nm    694.5655700850274      693.9460883013087      [-0.6194817837186974]
+671.704 nm    1092.8190418555323      1092.1784909380106      [-0.6405509175217503]
+667.828 nm    1163.731655382685      1163.0918223639956      [-0.6398330186893872]
+659.895 nm    1307.4731657003194      1306.824030664928      [-0.6491350353915095]
+653.288 nm    1425.946404415987      1425.2941772162753      [-0.6522271997116604]
+650.653 nm    1472.9110233082913      1472.2483716000277      [-0.6626517082636383]
+640.225 nm    1657.459241984377      1656.7986628509263      [-0.6605791334507103]
+638.299 nm    1691.3626551538723      1690.6795491346786      [-0.6831060191937013]
+633.443 nm    1776.7321094173828      1776.0630613542303      [-0.6690480631525588]
+626.65 nm    1895.9620870699257      1895.2871650726054      [-0.6749219973203253]
 ```
 
-This will reduce all the CuNe frames using 12 multiprocessing threads.
+This will save a *_spectra.fits file in your current directory which the first extension is wavelength, flux, flux_err. Other extensions include 
 
-## Step 4 - Reduction science frames. 
+ext0 - wavelength, flux, flux_err
+ext1 - pixel x axis
+ext2 - raw sky flux
+ext3 - lower sky flux 
+ext4 - uper sky flux 
+ext5 - average sky flux which is subtraced from the stellar spectra.
+ext6 - the traced calibration spectra for the first reference lamp
+ext7 - the traced calibration spectra for the second reference lamp.
 
-To reduce a science frame, we simply pass:
-```bash
-spupnic --grating gr5 --gratingangle -4 --extract_science a1341001.fits
-```
-
-This will look for calibration files within 1 hour of the science frame. If possiblem, it will take th eaverage of the calibration file before and after the exposure. If not, the default is simply to choose the nearest calibration file. If none are within 1 hour, it will fail unless the code is modified. 
-
-![alt text](https://github.com/samgill844/SpUpNIC/blob/master/images/fig3.png)
-
-![alt text](https://github.com/samgill844/SpUpNIC/blob/master/images/fig4.png)
-
-
-Like the CuNe files, we can reduce these en-mass by passing:
-
-```bash
-spupnic --grating gr5 --gratingangle -4 --extract_all_science --threads 12
-```
 
 ## Cosmic ray rejection
 
@@ -92,3 +78,10 @@ When processing long exposures, cosmic ray are a pain. We use astroscrappy to re
 ----reject_cosmics
 ```
 and it should work for you.
+
+# Process entire nights
+
+To make things easy, we can process entire nights easily
+```bash
+spupnic --process_folder --grating gr5 --gratingangle -4 --reject_cosmics --threads 12
+```
