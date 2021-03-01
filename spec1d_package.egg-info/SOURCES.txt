@@ -4,8 +4,10 @@ setup.py
 Utils/check_calibration
 Utils/spupnic
 Utils/spupnic_halpha
+Utils/spupnic_old
 Utils/spupnic_rv
 Utils/spupnic_rv_merge
+dist/spec1d_package-3.8-py3.8.egg
 images/fig1.png
 images/fig2.png
 images/fig3.png
