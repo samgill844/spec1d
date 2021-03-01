@@ -56,7 +56,7 @@ parser.add_argument('-e',
 
 parser.add_argument('-f', 
                     '--gratingangle',
-                     help='The grating angle (overides from header).', type=int, default = -99)
+                     help='The grating angle (overides from header).', type=str, default = '-99')
 
 parser.add_argument('-g', 
                     '--verbose',
@@ -106,6 +106,7 @@ def make_reference_spectra_with_gui(x, traced_flux, traced_flux_peaks, grating, 
     _, = ax.plot(x, traced_flux, c='k')
     line, = ax.plot(x[traced_flux_peaks], traced_flux[traced_flux_peaks], 'ro', markersize = 20, picker=1)  # 5 points tolerance
     wavelengths = np.zeros(len(traced_flux_peaks))
+    ax.invert_xaxis()
 
     def onpick(event):
         thisline = event.artist
@@ -290,7 +291,7 @@ if __name__=="__main__":
             axs[0][i*-1].imshow(h[0].data, aspect='auto', norm=norm, origin='lower', cmap='Greys')
             axs[0][i*-1].axhline(40, c='r', alpha = 0.3, ls = '--')
             axs[0][i*-1].axhline(100, c='r', alpha = 0.3, ls = '--')
-            axs[0][i*-1].set(xlabel='X', ylabel='Y', title = '{:} [grating {:} Angle {:}]'.format(args.extract_science, grating, gratingangle))
+            axs[0][i*-1].set(xlabel='X', ylabel='Y', title = '{:} [grating {:} Angle {:}]'.format(reference_spectral_files[i], grating, gratingangle))
             plot_rectangle(*flux_rectangle, axs[0][i*-1], c='r')
  
             # Now trace the true CuNe spectra from the mean gradient and extent of the slit
@@ -309,6 +310,7 @@ if __name__=="__main__":
             # that corrosponds to the mask     
             try : 
                 ref_spectra = pkg_resources.resource_filename('spec1d', 'data/{:}_{:}_ref_spectra.npy'.format(grating, gratingangle))
+                print(ref_spectra)
                 ref_spectra = np.load(ref_spectra, allow_pickle=True)
             except : 
                 print('No reference loines found for grating {:} [angle {:}]\nAttempting to make one with gui'.format(grating, gratingangle))
