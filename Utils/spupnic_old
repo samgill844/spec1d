@@ -11,7 +11,7 @@ from astropy.visualization import simple_norm
 import pkg_resources
 from scipy.signal import find_peaks
 from tqdm import tqdm 
-from multiprocessing import Pool
+from multiprocess import Pool
 import matplotlib.patches as patches
 from astropy.table import Table, Column, Row
 #plt.style.use('dark_background')
@@ -348,6 +348,10 @@ if __name__=="__main__":
                 z_before = np.polyfit(xx_before, yy_before, 3)
                 z_after= np.polyfit(xx_after, yy_after, 3)
                 pcalibration = np.poly1d((z_before + z_after)/2.)
+
+                #if np.max(np.abs(xx_after - xx_before))> 0.1 : 
+                #    print('Wavecal solution too big')
+                #    FAILED_WAVECAL = True
 
         else:
             FAILED_WAVECAL=True

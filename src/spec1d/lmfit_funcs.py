@@ -110,12 +110,12 @@ def fit_gaussians_to_emission_lines(spectra, centers, x=None, verbose=False):
     for i in range(1,centers.shape[0]):
         gaussmodel_ = GaussianModel(prefix='f{:}_'.format(i))
         pars_ = gaussmodel_.guess(x, spectra)
-        pars_['f{:}_center'.format(i)].set(vary=True, value = centers[i], min = centers[i]-2 , max = centers[i]+2)
+        pars_['f{:}_center'.format(i)].set(vary=True, value = centers[i], min = centers[i]-5 , max = centers[i]+5)
         pars_['f{:}_amplitude'.format(i)].set(vary=True, value = 0.5)
         pars_['f{:}_sigma'.format(i)].set(vary=True, value = 2, min=0.9, max = 5)
         gaussmodel = gaussmodel +  gaussmodel_
         pars = pars + pars_
-    out = gaussmodel.fit(spectra, pars, x=x)
+    out = gaussmodel.fit(spectra, pars, x=x, method='powell')
 
     if verbose:
         print('Gaussians fit to spectra:')
