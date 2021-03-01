@@ -290,7 +290,7 @@ if __name__=="__main__":
             axs[0][i*-1].imshow(h[0].data, aspect='auto', norm=norm, origin='lower', cmap='Greys')
             axs[0][i*-1].axhline(40, c='r', alpha = 0.3, ls = '--')
             axs[0][i*-1].axhline(100, c='r', alpha = 0.3, ls = '--')
-            axs[0][i*-1].set(xlabel='X', ylabel='Y', title = '{:} [grating {:} Angle {:}]'.format(args.extract_science, grating, gratingangle))
+            axs[0][i*-1].set(xlabel='X', ylabel='Y', title = '{:} [grating {:} Angle {:}]'.format(reference_spectral_files[i], grating, gratingangle))
             plot_rectangle(*flux_rectangle, axs[0][i*-1], c='r')
  
             # Now trace the true CuNe spectra from the mean gradient and extent of the slit
