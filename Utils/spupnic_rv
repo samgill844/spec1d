@@ -209,10 +209,10 @@ if __name__=="__main__":
     print('Tellucirc shift {:} +- {:}'.format(models[0].mu(), models[0].emu()))
 
     # Now correct it
-    #normed_spectrum = ispec.correct_velocity(normed_spectrum, models[0].mu())
+    normed_spectrum = ispec.correct_velocity(normed_spectrum, -models[0].mu())
 
     # Now correct for the barycentric velocity
-    normed_spectrum = ispec.correct_velocity(normed_spectrum, barycentric_velocity)
+    normed_spectrum = ispec.correct_velocity(normed_spectrum, -barycentric_velocity)
 
 
     determine_radial_velocity_with_mask(normed_spectrum, mask='A0')

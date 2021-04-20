@@ -16,10 +16,15 @@ spec1d_package.egg-info/SOURCES.txt
 spec1d_package.egg-info/dependency_links.txt
 spec1d_package.egg-info/requires.txt
 spec1d_package.egg-info/top_level.txt
+src/.DS_Store
+src/spec1d/.DS_Store
 src/spec1d/__init__.py
+src/spec1d/align_O2.py
 src/spec1d/align_distorted_spectra.py
 src/spec1d/create_log.py
 src/spec1d/image_tracing.py
 src/spec1d/lmfit_funcs.py
+src/spec1d/data/gr5_-4_O2.txt
 src/spec1d/data/gr5_-4_ref_spectra.npy
+src/spec1d/data/gr5_-4_tellurics.txt
 src/spec1d/data/gr7_15.6_ref_spectra.npy

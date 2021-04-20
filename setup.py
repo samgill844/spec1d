@@ -11,7 +11,7 @@ setup(
     packages=['spec1d'],
     package_dir={'spec1d': 'src/spec1d'},
     #package_data={'spec1d': ['data/gr5_-4_ref_spectra.dat', 'data/gr5_-4_ref_lines.dat']},
-    package_data={'spec1d': ['data/*.npy']},
+    package_data={'spec1d': ['data/*.npy', 'data/*.txt']},
     scripts=['Utils/spupnic', 'Utils/spupnic_halpha' , 'Utils/spupnic_rv' ,'Utils/spupnic_rv_merge','Utils/check_calibration'],
     install_requires=['numba']
 )

@@ -63,6 +63,7 @@ def walk_to_threashold(x, start, threshold, step=1):
     return start
 
 def find_science_image_bounds(gradeint, upper_line_intersection, lower_line_intersection,   image, vertical_oversample=10, horizontal_oversample=10):
+    gradeint = np.clip(gradeint, 1e-5, np.inf)
     dc = upper_line_intersection - lower_line_intersection
     dist = dc / np.sqrt(gradeint**2 + 1)
     xs = np.sqrt(dc**2 - dist**2)
@@ -83,7 +84,9 @@ def find_science_image_bounds(gradeint, upper_line_intersection, lower_line_inte
     dy = np.sqrt(1 / ((1/gradeint**2) + 1))
 
     # Coordinates of the top line
+    print(top_start, top_end,dy, dx)
     position_top_line = np.transpose(( np.arange(top_start[0],top_end[0], dx ), np.arange(top_start[1],top_end[1], dy )  ))
+    print(position_top_line)
 
     # calculate the corrosponding coordinates of the lower line
     position_lower_line = np.copy(position_top_line)

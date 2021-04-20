@@ -21,6 +21,8 @@ from spec1d.create_log import create_log # This function re-creates a log file f
 from spec1d.image_tracing import trace_image_between_rows, trace_image_between_cols, trace_image_between_lines, find_science_image_bounds , plot_rectangle, trace_rectangle # These functions handle the summing of flux
 from spec1d.lmfit_funcs import fit_box_to_step_function, fit_box_to_step_function_science, fit_gaussians_to_emission_lines
 from spec1d.align_distorted_spectra import align_distorted_spectra, spready
+from spec1d.align_O2 import align_with_O2
+
 import glob
 from astroscrappy import detect_cosmics 
 
@@ -76,6 +78,7 @@ parser.add_argument('--process_folder', action="store_true", default=False, help
 parser.add_argument('--reject_cosmics', action="store_true", default=False, help="Process entire night of data.")
 parser.add_argument('--purge', action="store_true", default=False, help="Process entire night of data.")
 parser.add_argument('--list_science', action="store_true", default=False, help="Process entire night of data.")
+parser.add_argument('--O2_tweak', action="store_true", default=False, help="Process entire night of data.")
 
 
 
@@ -86,6 +89,8 @@ parser.add_argument('--list_science', action="store_true", default=False, help="
 def extract_all_science_worker(i):
     cmd = 'spupnic --extract_science {:} --grating {:} --gratingangle {:}'.format(t['FILE'][i], args.grating, args.gratingangle)
     if args.reject_cosmics : cmd += ' --reject_cosmics'
+    if args.O2_tweak : cmd += ' --O2_tweak'
+
     try : os.system(cmd)
     except : pass 
 
@@ -366,9 +371,27 @@ if __name__=="__main__":
         # Now we need to interplate x into wavelength using reference_spectra_pixel_calibrations
         wavelength = np.interp(x , reference_spectra_pixel_calibrations[:,0], reference_spectra_pixel_calibrations[:,1], left = -99, right=-99)
         mask = (wavelength!=-99)
+        tmp = np.array([wavelength[mask], (stellar_flux - avrg_sky)[mask], np.ones(wavelength.shape[0])[mask]]).T[::-1]
+
+        # Now save
+        plt.savefig('{:}_{:}_spectra.png'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']))
+        plt.close()
+
+        # Now tweak the wavelength solution using the O2 absorbtion
+        if args.O2_tweak:
+            # Load the O2 absorbtion
+            try : 
+                O2_spectra = pkg_resources.resource_filename('spec1d', 'data/{:}_{:}_O2.txt'.format(grating, gratingangle))
+                print('Loading O2 from ' + O2_spectra)
+                O2_spectra = np.loadtxt(O2_spectra)
+            except : 
+                print('Unable to load O2 ')
+            O2_fig, tmp, O2_RV, O2_RV_err = align_with_O2(tmp, O2_spectra)
+            O2_fig.savefig('{:}_{:}_O2_correction.png'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']))
+            plt.close()
+
 
         # Now write out the spectra
-        tmp = np.array([wavelength[mask], (stellar_flux - avrg_sky)[mask], np.ones(wavelength.shape[0])[mask]]).T[::-1]
         card = fits.PrimaryHDU(tmp)
         coord = SkyCoord('{:} {:}'.format(h[0].header['TARG-RA'], h[0].header['TARG-DEC']), unit=(u.hourangle, u.deg))
         card.header.set('RA',  float(coord.ra.value) , 'righ asc')
@@ -379,18 +402,25 @@ if __name__=="__main__":
         BV = get_BC_vel(JDUTC=Time(h[0].header['HJD-OBS']+2400000, format='jd'), ra=coord.ra.value,dec=coord.dec.value, obsname='SAAO')[0][0] / 1e3
         card.header.set('BV', BV , 'Barycentric velocity')
 
+        if args.O2_tweak:
+            card.header.set('O2_RV', O2_RV , 'O2 telluric wavelength correction (km/s).')
+            card.header.set('O2_RV_err', O2_RV_err , 'O2 telluric wavelength correction err (km/s)')
+
 
         science_image_cards = [fits.ImageHDU(x[mask]), 
                                fits.ImageHDU(stellar_flux[mask]),
                                fits.ImageHDU(sky_lower_flux[mask]),
                                fits.ImageHDU(sky_upper_flux[mask]),
                                fits.ImageHDU(avrg_sky[mask])]
-
+            
 
         fits.HDUList([card, *science_image_cards, *calibration_spectra_cards]).writeto('{:}_{:}_spectra.fits'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']), overwrite=True)
 
-        plt.savefig('{:}_{:}_spectra.png'.format(args.extract_science.split('.')[0], h[0].header['OBJECT']))
-        plt.close()
+
+
+
+
+            
 
 
 
