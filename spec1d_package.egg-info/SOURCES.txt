@@ -8,7 +8,6 @@ Utils/spupnic_halpha
 Utils/spupnic_old
 Utils/spupnic_rv
 Utils/spupnic_rv_merge
-dist/spec1d_package-3.8-py3.8.egg
 images/.DS_Store
 images/fig1.png
 spec1d_package.egg-info/PKG-INFO

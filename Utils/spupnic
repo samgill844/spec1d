@@ -358,6 +358,7 @@ if __name__=="__main__":
 
 
         # now prep the calibration 
+        caldiffs = np.zeros(reference_spectra_pixel_calibrations[0].shape[0])
         if len(reference_spectra_pixel_calibrations) > 1:
             print('Averageing 2 calibrations')
             for i in range(reference_spectra_pixel_calibrations[1].shape[0]):
@@ -365,6 +366,7 @@ if __name__=="__main__":
                                                                  reference_spectra_pixel_calibrations[0][i][0],
                                                                  reference_spectra_pixel_calibrations[1][i][0],
                                                                  reference_spectra_pixel_calibrations[1][i][0] - reference_spectra_pixel_calibrations[0][i][0]))
+                caldiffs[i] = reference_spectra_pixel_calibrations[1][i][0] - reference_spectra_pixel_calibrations[0][i][0]
             reference_spectra_pixel_calibrations =  np.array([(reference_spectra_pixel_calibrations[0][:,0] + reference_spectra_pixel_calibrations[1][:,0]) / 2, reference_spectra_pixel_calibrations[0][:,1]]).T
         else : reference_spectra_pixel_calibrations = reference_spectra_pixel_calibrations[0] 
 
@@ -398,6 +400,13 @@ if __name__=="__main__":
         card.header.set('DEC', float(coord.dec.value) , 'Dec')
         card.header.set('OBJECT', str(h[0].header['OBJECT']) , 'name of object')
         card.header.set('HJD-OBS', float(h[0].header['HJD-OBS']+2400000) , 'HJD of obs')
+        
+        card.header.set('Ncal'.format(i+1), int(reference_spectra_pixel_calibrations.shape[0]) , 'Ncal')
+        for i in range(reference_spectra_pixel_calibrations.shape[0]) : 
+            print('Setting ', i, float(reference_spectra_pixel_calibrations[i,0]), float(reference_spectra_pixel_calibrations[i,1]), float(caldiffs[i]))
+            card.header.set('CAL{:}P'.format(i+1), float(reference_spectra_pixel_calibrations[i,0]) , 'Pixel')
+            card.header.set('CAL{:}W'.format(i+1), float(reference_spectra_pixel_calibrations[i,1]) , 'Wave')
+            card.header.set('CAL{:}1D'.format(i+1), float(caldiffs[i]) , 'diff')
 
         BV = get_BC_vel(JDUTC=Time(h[0].header['HJD-OBS']+2400000, format='jd'), ra=coord.ra.value,dec=coord.dec.value, obsname='SAAO')[0][0] / 1e3
         card.header.set('BV', BV , 'Barycentric velocity')
